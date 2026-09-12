@@ -5,6 +5,14 @@
 
 整理版 `v0.2.3` ｜ 上游 `main @ d639887` ｜ 已在 **DSH 0.1.2-rc.1** 实测通过 ｜ 上游原创代码 Apache-2.0
 
+| | |
+| --- | --- |
+| 本分支仓库 | https://github.com/Guzhou2002/Fairy-DSH-Optimized |
+| 发布下载（Releases） | https://github.com/Guzhou2002/Fairy-DSH-Optimized/releases |
+| 上游仓库 | https://github.com/Chengzhibense/Fairy-DSH （作者：橙汁本色） |
+| 维护 fork 看这份 | `docs\仓库与上游.md`（含合并上游时的三个坑） |
+| 交流群 | 1124349108 |
+
 > **只想赶紧用上？**
 > 不用看这份文档，直接打开包里的 **`安装说明.txt`**（傻瓜版，一步步照做即可）。
 > 本文档是给想了解细节、排障、二次分发的人看的。
