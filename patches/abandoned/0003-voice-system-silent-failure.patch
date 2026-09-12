@@ -1,0 +1,34 @@
+--- a/fairy-voice/dsh-fairy-voice/lib/client.js
++++ b/fairy-voice/dsh-fairy-voice/lib/client.js
+@@ -996,6 +996,30 @@
+         };
+-          speakNext();
++          // [local patch 0003] Chrome 的嗓音表是异步加载的；为空时 speak() 不报错也不出声
++          const startWhenVoicesReady = () => { ... 等待 voiceschanged，1.5s 超时则报错 ... };
++          startWhenVoicesReady();
+         });
+@@ -993,6 +1017,12 @@
+             window.speechSynthesis.speak(utterance);
++            // [local patch 0003] 2.5 秒后若既没播完也没在播，说明系统侧根本没出声
++            setTimeout(() => {
++              if (index === 0 && !window.speechSynthesis.speaking && !window.speechSynthesis.pending) {
++                publish({ status: 'error', messageId, error: '语音合成未开始：请检查系统默认播放设备与音量' });
++                resolve(false);
++              }
++            }, 2500);
+
+说明
+----
+system 引擎走 speechSynthesis，但有两类"静默失败"是上游代码没处理的：
+
+1. Chrome 的 speechSynthesis.getVoices() 是异步填充的。若在嗓音表为空时调用
+   speak()，Chrome 既不抛错也不发声，onend/onerror 都不触发 —— 界面停在
+   "播放中"，用户完全得不到反馈。本补丁先等 voiceschanged（最多 1.5 秒），
+   超时仍为空则报出明确错误。
+2. 即使嗓音表正常，也可能因为系统默认播放设备/音量问题而完全没出声。
+   本补丁在 speak() 之后 2.5 秒检查：若一条都没播完（index === 0）且
+   speechSynthesis 既不在 speaking 也不在 pending，就判定为"没出声"并报错。
+
+两处都只影响 system 引擎的分支（fairy 引擎不走 playSystem），对上游行为零影响。
+
+验证：node --check 通过；补丁级别识别为 p3；旧文件会被自动重刷。

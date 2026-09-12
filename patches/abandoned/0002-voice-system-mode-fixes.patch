@@ -1,0 +1,54 @@
+--- a/fairy-voice/dsh-fairy-voice/lib/client.js
++++ b/fairy-voice/dsh-fairy-voice/lib/client.js
+@@ -1077,7 +1077,7 @@
+       React.useEffect(() => {
+-        if (audioReady) return undefined;
++        if (audioReady || engine === 'system') return undefined; // [local patch 0002] system 引擎无需 Web Audio
+         const unlockFromGesture = () => {
+@@ -1216,10 +1216,17 @@
+             // Acquire browser playback permission, then suspend while text and
+             // optional briefing are prepared. play() resumes immediately before
+             // scheduling PCM, so preparation never holds an idle render thread.
+-            await primeAudio(volume);
+-            if (!isCurrentRequest()) return;
+-            audioUnlocked.current = true;
+-            setAudioReady(true);
++            if (engine === 'system') {
++              // [local patch 0002] 跳过 Web Audio 预解锁：它只服务于 PCM 播放
++              audioUnlocked.current = true;
++              setAudioReady(true);
++            } else {
++              await primeAudio(volume);
++              if (!isCurrentRequest()) return;
++              audioUnlocked.current = true;
++              setAudioReady(true);
++            }
+             let speechMarkdown = markdown;
+@@ -1431,7 +1438,7 @@
+-        engine === 'fairy' && state.status === 'error' ? jsx.jsx('span', { title: state.error, ...
++        state.status === 'error' /* [local patch 0002] 让错误在 system 引擎下也可见 */ ? jsx.jsx('span', { title: state.error, ...
+
+说明
+----
+把引擎切到 'system'（浏览器 speechSynthesis）之后，暴露出上游三处只适用于
+PCM 播放路径的假设，导致「有控件但不出声、且不报错」：
+
+1. 载入时会注册首次手势监听去预解锁 AudioContext（createVoiceTimeline 组件的
+   effect）。system 引擎完全不用 PCM，这个 AudioContext 既没用，又会在无手势
+   时停在 suspended。
+2. 播放处理器（EVENT_PLAY）的第一步无条件 `await primeAudio(volume)`。
+   AudioContext.resume() 在自动播放策略下可能长期不 resolve，于是整个播放流程
+   卡在这一行之后：既不朗读，也不产生任何错误。
+3. 错误提示只在 engine === 'fairy' 时渲染，所以 system 引擎下所有失败都被静默
+   吞掉，界面上看不出任何异常。
+
+本补丁：
+- 载入时不再为 system 引擎注册预解锁监听
+- system 引擎直接跳过 primeAudio，把 audioUnlocked / audioReady 置真后走
+  playSystem（语音合成与 AudioContext 无关，不需要解锁）
+- 错误提示改为与引擎无关，任何失败都会显示出来（鼠标悬停可看 title）
+
+对 fairy 引擎零影响：分支条件都是 engine === 'system'，走 else 分支即原逻辑。
+
+验证：node --check 通过；补丁级别由 Get-VoicePatchLevel 识别为 p2，
+旧文件（p1）会被 switch-voice-engine / install 自动重刷为 p2。

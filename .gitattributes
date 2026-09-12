@@ -1,0 +1,15 @@
+# 行尾与二进制归属：本项目只面向 Windows（PowerShell + QQ 群分发），
+# 带 BOM 的脚本与说明一律不做行尾归一化，避免 BOM/CRLF 被改写后 PS 5.1 读错。
+* text=auto
+
+*.ps1 -text
+*.cmd -text
+安装说明.txt -text
+
+*.zip  binary
+*.sha256 binary
+*.png  binary
+*.jpg  binary
+*.ico  binary
+*.wav  binary
+*.woff2 binary

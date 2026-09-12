@@ -1,0 +1,40 @@
+--- a/fairy-voice/dsh-fairy-voice/lib/client.js
++++ b/fairy-voice/dsh-fairy-voice/lib/client.js
+@@ -442,3 +442,6 @@
+-    function messageText(finalNode) {
+-      return (finalNode?.blocks || []).filter((block) => block.kind === 'text').map((block) => block.text).join('\n').trim();
+-    }
++    function messageText(source) {
++      // [local patch 0005] 文本块在 node.data.blocks 上；finalNode 只有 seq/messageId
++      const blocks = source?.blocks || source?.finalNode?.blocks || [];
++      return blocks.filter((block) => block.kind === 'text').map((block) => block.text).join('\n').trim();
++    }
+@@ -465,2 +468,2 @@
+         const finalNode = data?.finalNode;
+-        const text = messageText(finalNode);
++        const text = messageText(data); // [local patch 0005]
+@@ -493,2 +496,2 @@
+         const finalNode = closing?.finalNode;
+-        const text = messageText(finalNode);
++        const text = messageText(closing); // [local patch 0005]
+
+说明 —— 这是"回复上完全没有朗读按钮"的根因
+----
+官方 DSH 0.1.2-rc.1 的助手节点（assistant-step）结构是：
+
+    node.data.blocks        助手文本块在这里（官方 AssistantNodeView: blocks: data.blocks）
+    node.data.status        running / settled / interrupted
+    node.data.finalNode     只有 seq 与 messageId —— 没有 blocks
+
+上游插件按 data.finalNode.blocks 取文本，于是 messageText() 恒返回空字符串，
+found 数组永远为空 → MessageAction 里 `if (!message) return null` 命中 →
+每条回复上的朗读按钮都不渲染，界面上什么都看不到，也没有任何报错。
+
+本补丁让 messageText 同时接受两种位置（source.blocks 优先，回退 source.finalNode.blocks），
+并把两处调用传对对象（assistant-step 传 data，turn-tail 传 closing）。
+
+官方依据（本机 dsh 0.1.2-rc.1）：
+- dsh-client-ui-chat/lib/client.js:2986   blocks: data.blocks
+- dsh-client-ui-chat/lib/client.js:2967-2975  仅用 data.finalNode.seq
+
+验证：node --check 通过；补丁级别 p5；配套的 patch 0004 会在输入区显示"已收录 N 条"以便确认。

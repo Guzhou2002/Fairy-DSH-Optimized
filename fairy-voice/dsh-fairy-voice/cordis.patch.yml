@@ -1,0 +1,7 @@
+# dsh-fairy-voice bundle patch: one row over the target profile.
+# The row name resolves from the profile's own node_modules where
+# dsh plugin --profile <name> add <path> installed this package.
+- insert:
+    - id: fairy-voice
+      name: 'dsh-fairy-voice'
+      inject: [clientModules]

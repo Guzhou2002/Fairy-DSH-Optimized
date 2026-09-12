@@ -12,10 +12,11 @@
   "scripts": {
     "test": "node --test test/*.test.js"
   },
-  "dependencies": {
-    "dsh-fairy-contracts": "link:../../fairy-contracts"
-  },
+  "dependencies": {},
   "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
     "client": {
       "platform": "web",
       "inject": [

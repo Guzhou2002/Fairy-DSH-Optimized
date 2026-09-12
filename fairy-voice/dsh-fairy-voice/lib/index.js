@@ -3,30 +3,23 @@ import { gfmFromMarkdown } from 'mdast-util-gfm';
 import { gfm } from 'micromark-extension-gfm';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { readFileSync } from 'node:fs';
 import { chmod, mkdir, open, readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
-import { createLocalTtsTransport, createPcmStreamHandler } from './server/local-tts-proxy.js';
+import { createPcmStreamHandler } from './server/local-tts-proxy.js';
+import {
+  buildTtsTransport,
+  readRuntimeConfig,
+  readReferencePrompt,
+  runVoiceSelfCheck,
+  saveRuntimeConfig,
+} from './server/voice-selfcheck.js';
 import { createVoiceBriefFallback, createVoiceBrainServerBoundary } from './server/voice-brief-fallback.js';
-import { createFairyDiagnostics } from 'dsh-fairy-contracts/diagnostics';
+import { createFairyDiagnostics } from '../vendor/diagnostics.js';
 
-const LOCAL_TTS_URL = 'http://127.0.0.1:9880/tts';
-const LOCAL_DOCS_URL = 'http://127.0.0.1:9880/docs';
-const REFERENCE_AUDIO_PATH = join(homedir(), '.dsh', 'fairy-voice', 'runtime', 'reference', 'fairy_ref.wav');
-const REFERENCE_PROMPT_PATH = join(homedir(), '.dsh', 'fairy-voice', 'runtime', 'reference', 'fairy_ref.txt');
-const REFERENCE_PROMPT_FALLBACK = '根据用户协议，我无权回复该问题。主人将在合适的时间与合适的场合获知答案。';
+// [local patch 0.2.3] SoVITS 地址、参考音频路径不再是写死的常量：
+// 默认值在 voice-selfcheck.js 里，用户可在设置栏改，改完即时生效。
 const diagnostics = createFairyDiagnostics('dsh-fairy-voice');
 
-function readReferencePrompt() {
-  try {
-    return readFileSync(REFERENCE_PROMPT_PATH, 'utf8').trim();
-  } catch (error) {
-    diagnostics.warn('reference.prompt.load', { file: 'fairy_ref.txt', fallback: true }, error);
-    return REFERENCE_PROMPT_FALLBACK;
-  }
-}
-
-const REFERENCE_PROMPT = readReferencePrompt();
 const MAX_TTS_TEXT_LENGTH = 500;
 const MAX_SENTENCE_LENGTH = 40;
 const TTS_TIMEOUT_MS = 180_000;
@@ -460,12 +453,9 @@ const createVoiceBrief = createVoiceBriefFallback({
 export function createFairyVoiceHandlers({ fetchImpl = fetch, readConfig = readVoiceBrainConfig, writeConfig = writeVoiceBrainConfig, clearConfig = clearVoiceBrainConfig } = {}) {
   const sentencePreparation = createSentencePreparation();
   const pcmStreamHandler = createPcmStreamHandler();
-  const localTtsTransport = createLocalTtsTransport({
+  // [local patch 0.2.3] 传输层按当前运行时配置构造，改设置后立刻生效（无需重启 DSH）。
+  const localTtsTransport = () => buildTtsTransport(readRuntimeConfig(), {
     fetchImpl,
-    ttsUrl: LOCAL_TTS_URL,
-    docsUrl: LOCAL_DOCS_URL,
-    referenceAudioPath: REFERENCE_AUDIO_PATH,
-    referencePrompt: REFERENCE_PROMPT,
     ttsTimeoutMs: TTS_TIMEOUT_MS,
     statusTimeoutMs: STATUS_TIMEOUT_MS,
   });
@@ -492,7 +482,7 @@ export function createFairyVoiceHandlers({ fetchImpl = fetch, readConfig = readV
     status: async (_req, res) => {
       const startedAt = diagnostics.start();
       try {
-        sendJson(res, 200, await localTtsTransport.status());
+        sendJson(res, 200, await localTtsTransport().status());
       } catch (error) {
         diagnostics.warn('status.request', {}, error);
         sendJson(res, 200, { available: false, reason: '本地 Fairy 服务未启动。' });
@@ -573,7 +563,7 @@ export function createFairyVoiceHandlers({ fetchImpl = fetch, readConfig = readV
         if (Array.from(text).length > MAX_TTS_TEXT_LENGTH) throw Object.assign(new Error('large'), { code: 'text-too-large' });
         activeTtsController?.abort('superseded');
         activeTtsController = controller;
-        const upstream = await localTtsTransport.stream(text, controller.signal);
+        const upstream = await localTtsTransport().stream(text, controller.signal);
         const response = upstream.response || upstream;
         releaseUpstream = upstream.release || null;
         if (!response.ok) throw Object.assign(new Error('local synthesis failed'), { code: 'local-service-failed' });
@@ -603,6 +593,47 @@ export function createFairyVoiceHandlers({ fetchImpl = fetch, readConfig = readV
         scope.cancel('request-complete');
       }
     },
+    // [local patch 0.2.3] 读取/保存 SoVITS 地址与参考音频路径（不含任何密钥）。
+    config: async (req, res) => {
+      if (req.method === 'GET' || req.method === 'HEAD') {
+        sendJson(res, 200, readRuntimeConfig());
+        return;
+      }
+      try {
+        const body = await readJson(req, 10_000);
+        const saved = await saveRuntimeConfig(body);
+        if (saved.ok !== true) {
+          sendJson(res, 400, { error: { code: 'config-invalid', message: saved.error } });
+          return;
+        }
+        diagnostics.info('config.save', { base: saved.config.base });
+        sendJson(res, 200, { ok: true, ...saved.config });
+      } catch (error) {
+        const code = error?.message === 'invalid-json' ? 'invalid-json' : 'config-invalid';
+        diagnostics.warn('config.save', { code }, error);
+        sendJson(res, 400, { error: { code, message: code === 'invalid-json' ? '请求格式不对。' : '保存失败。' } });
+      }
+    },
+    // [local patch 0.2.3] 朗读链路自检：逐项给出人话结论 + 怎么修。
+    selfcheck: async (req, res) => {
+      const startedAt = diagnostics.start();
+      let withSynthesis = true;
+      try {
+        const url = new URL(req.url ?? '/', 'http://x');
+        withSynthesis = url.searchParams.get('synth') !== '0';
+        sendJson(res, 200, await runVoiceSelfCheck({ fetchImpl, withSynthesis }));
+      } catch (error) {
+        diagnostics.warn('selfcheck.run', {}, error);
+        sendJson(res, 200, {
+          ok: false,
+          headline: `自检本身出错了：${String(error?.message || error)}`,
+          checks: [],
+          config: readRuntimeConfig(),
+        });
+      } finally {
+        diagnostics.metric('selfcheck.run', startedAt, { synth: withSynthesis }, { thresholdMs: 500 });
+      }
+    },
   };
 }
 
@@ -616,6 +647,8 @@ export function apply(ctx) {
     const unregisterBrainStatus = ws.webServer.register({ kind: 'exact', path: '/fairy-voice/brain/status', handler: handlers.voiceBrainStatus });
     const unregisterBrainConfig = ws.webServer.register({ kind: 'exact', path: '/fairy-voice/brain/config', handler: handlers.voiceBrainConfig });
     const unregisterBrainBrief = ws.webServer.register({ kind: 'exact', path: '/fairy-voice/brain/brief', handler: handlers.voiceBrief });
+    const unregisterConfig = ws.webServer.register({ kind: 'exact', path: '/fairy-voice/config', handler: handlers.config });
+    const unregisterSelfCheck = ws.webServer.register({ kind: 'exact', path: '/fairy-voice/selfcheck', handler: handlers.selfcheck });
     return () => {
       handlers.dispose();
       unregisterStatus?.();
@@ -624,6 +657,8 @@ export function apply(ctx) {
       unregisterBrainStatus?.();
       unregisterBrainConfig?.();
       unregisterBrainBrief?.();
+      unregisterConfig?.();
+      unregisterSelfCheck?.();
     };
   }));
   }, { surface: 'host' });

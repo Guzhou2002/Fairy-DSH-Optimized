@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { createReadStream, existsSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, watch, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { createFairyDiagnostics } from 'dsh-fairy-contracts/diagnostics';
+import { createFairyDiagnostics } from '../vendor/diagnostics.js';
 
 const DSH_HOME = process.env.DSH_HOME || join(homedir(), '.dsh');
 const RUNTIME_DIR = join(DSH_HOME, 'browser-dock');

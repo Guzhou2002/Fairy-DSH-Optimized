@@ -1,0 +1,27 @@
+--- a/fairy-voice/dsh-fairy-voice/lib/client.js
++++ b/fairy-voice/dsh-fairy-voice/lib/client.js
+@@ -1019,9 +1019,9 @@
+-      // Fairy is the only supported voice. Keeping this fixed avoids an accidental
+-      // fallback to a non-Fairy system voice from an old local preference.
+-      const engine = 'fairy';
++      // [local patch] upstream hard-pins 'fairy' (local GPT-SoVITS only).
++      // Switched to 'system' so read-aloud works offline via browser voices.
++      const engine = 'system';
+@@ -1472,7 +1472,7 @@
+-      const engine = 'fairy';
++      const engine = 'system';
+
+说明
+----
+上游把朗读引擎硬编码为 'fairy'（走宿主 /fairy-voice/tts -> 本机
+http://127.0.0.1:9880 GPT-SoVITS），playSystem()（浏览器 speechSynthesis）
+这条路径实现完整但被故意禁用，注释写明是为了防止退化成系统嗓音。
+
+本改动把两处 engine 常量切到 'system'，使朗读在无本地 TTS 服务时也能工作：
+- 不需要 GPT-SoVITS，不需要参考音频，离线可用
+- 自动挑选 lang 以 zh 开头的系统嗓音，回退 zh-CN
+- 音量、逐句播放、停止都由 playSystem 处理
+
+代价：音色是系统嗓音，不是作者调校的 Fairy 音色。
+
+回滚：用 lib/client.js.upstream 覆盖 lib/client.js 即可。

@@ -1,7 +1,7 @@
 import { chmodSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { createFairyDiagnostics } from 'dsh-fairy-contracts/diagnostics';
+import { createFairyDiagnostics } from '../vendor/diagnostics.js';
 
 const DSH_HOME = process.env.DSH_HOME || join(homedir(), '.dsh');
 const BALANCE_URL = 'https://api.deepseek.com/user/balance';

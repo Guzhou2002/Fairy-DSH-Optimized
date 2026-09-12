@@ -1,4 +1,4 @@
-import { createFairyDiagnostics } from 'dsh-fairy-contracts/diagnostics';
+import { createFairyDiagnostics } from '../vendor/diagnostics.js';
 
 export const name = 'dsh-fairy-startup';
 const diagnostics = createFairyDiagnostics(name);

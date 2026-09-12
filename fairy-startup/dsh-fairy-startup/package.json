@@ -10,6 +10,9 @@
     "./package.json": "./package.json"
   },
   "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
     "client": {
       "platform": "web",
       "inject": [
@@ -19,7 +22,5 @@
       ]
     }
   },
-  "dependencies": {
-    "dsh-fairy-contracts": "link:../../fairy-contracts"
-  }
+  "dependencies": {}
 }

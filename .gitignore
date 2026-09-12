@@ -1,13 +1,24 @@
+# ---- 依赖：用 pnpm install 重建，不进仓库（发布包里的 node_modules 由 build-release.ps1 生成）----
 node_modules/
-.dsh-test-home/
-.env
-.env.*
-*.key
-*.pem
-logs/
-sessions/
-runtime/
-playwright-profile/
-world-core/
-browser-evidence/
-benchmarks/
+**/node_modules/
+.pnpm-store/
+
+# ---- 分发产物：走 GitHub Releases / QQ 群，不进历史 ----
+release/
+*.zip
+*.sha256
+
+# ---- 本地生成物 ----
+snapshots/
+_install-logs/
+dist/
+*.log
+*.bak
+*.tmp
+*.tmp.*
+
+# ---- 编辑器 / 系统 ----
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini

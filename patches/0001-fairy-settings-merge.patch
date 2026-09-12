@@ -1,0 +1,34 @@
+--- a/fairy-visual/dsh-fairy-visual/lib/client.js
++++ b/fairy-visual/dsh-fairy-visual/lib/client.js
+@@ 设置栏合并 @@
++ 新增 FairyVoicePanel 组件（朗读服务检测 + 语音简报 API Key）
+  settings.section 注册回调改为：jsxs('div', { children: [jsx(Settings, {...}), jsx(FairyVoicePanel, {})] })
+
+--- a/fairy-voice/dsh-fairy-voice/lib/client.js
++++ b/fairy-voice/dsh-fairy-voice/lib/client.js
+@@ 移除自身设置入口 @@
+-        injectVoiceSlot(ctx, 'settings.section', { id: 'fairy-voice-brain', order: 30, label: () => '语音简报' }, VoiceBrainSection),
++        // [local patch 0.2.0] 设置入口已并入 fairy-visual 的单个 Fairy 设置栏
+
+说明（0.2.0 的核心改动）
+----
+1. **设置栏只留一个 Fairy 入口**
+   官方 settings.section 是「左侧列表 + 右侧内容、一次显示一个」（渲染处为
+   renderSlot("settings.section", {...}, { only: active })），所以两个注册 = 两个入口。
+   现在 fairy-voice 不再注册自己的 section，语音面板并入 fairy-visual 的 Fairy 设置栏。
+
+2. **朗读服务检测 + 醒目提示**
+   面板挂载时请求宿主 GET /fairy-voice/status：
+     - 可用  -> 绿色文案「正常 · 已连接本地 GPT-SoVITS（http://127.0.0.1:9880）」
+     - 不可用 -> **红色加粗警示条**「⚠ 未检测到本地朗读服务，朗读功能当前不可用。」+ 具体原因
+   并带「重新检测朗读服务」按钮。同时把语音简报的 API Key 表单搬进同一栏
+   （GET /fairy-voice/brain/status、POST /fairy-voice/brain/config，与上游请求格式一致）。
+
+3. **只保留上游 GPT-SoVITS 路线**
+   不再做任何引擎切换；client.js 的 engine 常量保持上游的 'fairy'。
+   先前的 system-TTS 实验补丁已归档到 patches/abandoned/，其失败原因见那里的 README。
+
+状态识别：Get-SettingsMergeState 通过 snapshots 标记判定 merged / upstream / mixed，
+install.ps1 在选语音时应用合并，未选语音或卸载时自动还原为上游。
+
+校验：两个 bundle 均 node --check 通过。

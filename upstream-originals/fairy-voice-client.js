@@ -513,28 +513,6 @@ module.exports = { FAIRY_LOG_PREFIX, createFairyDiagnostics };
       const running = activeAssistantSteps.length > 0 || activeTools.length > 0;
       const phase = !running ? null : activeTools.some((tool) => isSearchTool(tool.name)) ? 'searching' : activeTools.length ? 'tool' : 'working';
       const turn = Math.max(0, ...activeAssistantSteps.map((step) => Number(step.turn) || 0), ...activeTools.map((tool) => Number(tool.turn) || 0));
-      // [local patch 0.2.3] 诊断通道：把"消息识别"的实况交给设置栏自检面板。
-      // 只写结构信息（字段名与数量），不含任何对话内容；这里出错也不影响朗读。
-      try {
-        globalThis.__FAIRY_VOICE_DIAG__ = {
-          ...(globalThis.__FAIRY_VOICE_DIAG__ || {}),
-          updatedAt: Date.now(),
-          timelineRead: true,
-          hasSnapshot: Boolean(snapshot),
-          snapshotKeys: snapshot && typeof snapshot === 'object' ? Object.keys(snapshot).slice(0, 24) : [],
-          hasChat: Boolean(snapshot && snapshot.chat),
-          chatKeys: snapshot && snapshot.chat && typeof snapshot.chat === 'object' ? Object.keys(snapshot.chat).slice(0, 24) : [],
-          orderLength: Array.isArray(snapshot?.chat?.order) ? snapshot.chat.order.length : -1,
-          nodesKind: snapshot?.chat?.nodes instanceof Map ? 'Map' : typeof snapshot?.chat?.nodes,
-          turnCount: Array.isArray(snapshot?.chat?.timeline?.turnOrder) ? snapshot.chat.timeline.turnOrder.length : -1,
-          finalCount: found.length,
-          currentTurnFinalCount: currentTurnFinals.length,
-          userSeq,
-          sessionKey: String(sessionKey),
-          running: activeAssistantSteps.length > 0 || activeTools.length > 0,
-          activeTools: activeTools.length,
-        };
-      } catch (error) { /* 诊断不应影响朗读 */ }
       return {
         found,
         currentTurnFinals,
@@ -1544,16 +1522,12 @@ module.exports = { FAIRY_LOG_PREFIX, createFairyDiagnostics };
       const slotDisposers = [
         injectVoiceSlot(ctx, 'conversation.input.left', { name: 'conversation.input.left', id: 'fairy-voice-controller', order: 40 }, SessionScopedVoiceController),
         injectVoiceSlot(ctx, 'conversation.chat.assistant-actions', { id: 'fairy-voice-message-action', order: 20 }, MessageAction),
-        // [local patch 0.2.0] 设置入口已并入 fairy-visual 的单个 Fairy 设置栏
+        injectVoiceSlot(ctx, 'settings.section', { id: 'fairy-voice-brain', order: 30, label: () => '语音简报' }, VoiceBrainSection),
       ].filter((dispose) => typeof dispose === 'function');
       ctx.effect(() => () => slotDisposers.forEach((dispose) => dispose()), 'dsh-fairy-voice slot registrations');
       }, { surface: 'client' });
     }
 
-    // [local patch 0.2.3] 客户端已加载标记（自检面板据此判断朗读控件是否挂上）
-    try {
-      globalThis.__FAIRY_VOICE_DIAG__ = { ...(globalThis.__FAIRY_VOICE_DIAG__ || {}), mounted: true, mountedAt: Date.now() };
-    } catch (error) { /* 诊断不应影响朗读 */ }
     return { apply, inject: ['slots', 'sessions'] };
   }
 });
