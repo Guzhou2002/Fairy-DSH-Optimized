@@ -6,6 +6,9 @@
 #   .\pack.ps1                     打包全部，输出到 release\
 #   .\pack.ps1 -OutDir D:\out      指定输出目录
 #   .\pack.ps1 -SkipChecks         跳过自检（不推荐）
+#   .\pack.ps1 -ReleaseNames       额外产出一套「不带版本号」的文件名，上传 GitHub Release 用
+#                                  （README 里的 .../latest/download/dsh-fairy-visual.tgz
+#                                    是照字面取文件名的，带版本号则下次发版就会 404）
 #
 # 与旧的 build-release.ps1 的区别：
 #   · 不再打 zip，不再预装 node_modules —— 依赖由 pnpm 在安装时自动补齐
@@ -14,7 +17,8 @@
 [CmdletBinding()]
 param(
   [string]$OutDir,
-  [switch]$SkipChecks
+  [switch]$SkipChecks,
+  [switch]$ReleaseNames
 )
 
 $ErrorActionPreference = 'Stop'
@@ -106,6 +110,15 @@ foreach ($key in $Catalog.Keys) {
   }
 }
 
+# ---------- 额外产出：不带版本号的文件名（上传 GitHub Release 用）----------
+if ($ReleaseNames) {
+  Step "生成 Release 用文件名（不带版本号）"
+  foreach ($r in $results) {
+    Copy-Item (Join-Path $OutDir $r.文件) (Join-Path $OutDir "$($r.包名).tgz") -Force
+  }
+  Ok "已额外生成 $($results.Count) 个不带版本号的副本"
+}
+
 # ---------- 汇总 ----------
 $sums = Join-Path $OutDir 'SHA256SUMS.txt'
 $results | ForEach-Object { "$($_.SHA256)  $($_.文件)" } | Set-Content $sums -Encoding ascii
@@ -123,5 +136,18 @@ Write-Host ""
 Write-Host "  本机安装测试：" -ForegroundColor White
 Write-Host "    dsh plugin --profile web add $local" -ForegroundColor DarkGray
 Write-Host ""
-Write-Host "  分发：把这 5 个 .tgz 上传到 GitHub Release，群友用 URL 一行装完。" -ForegroundColor Gray
+
+if ($ReleaseNames) {
+  Write-Host "  上传 GitHub Release —— 请用这 5 个（不带版本号）：" -ForegroundColor White
+  foreach ($r in $results) { Write-Host "    $($r.包名).tgz" -ForegroundColor DarkGray }
+  Write-Host ""
+  Write-Host "  传完后的永久地址（README 里用的就是这些，把 <用户名>/<仓库> 换掉）：" -ForegroundColor White
+  foreach ($r in $results) {
+    Write-Host "    https://github.com/<用户名>/<仓库>/releases/latest/download/$($r.包名).tgz" -ForegroundColor DarkGray
+  }
+} else {
+  Write-Host "  分发：把这 5 个 .tgz 上传到 GitHub Release。" -ForegroundColor Gray
+  Write-Host "        注意：附件名要去掉版本号，否则 latest/download 下次发版就会 404。" -ForegroundColor Yellow
+  Write-Host "        加 -ReleaseNames 可让本脚本直接产出那套文件名。" -ForegroundColor Yellow
+}
 Write-Host ""
