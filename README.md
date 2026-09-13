@@ -258,6 +258,7 @@ DSH 升级后若界面元素变化，插件会**静默降级**（有 capability 
 改的都是安装分发、设置面板、朗读的读取适配层与引擎分支 —— 每处都有 `[local patch]` 注释，上面那份文档逐条对应。
 
 ---
+
 ## 许可与归属
 
 - **上游原创代码**：Apache License 2.0，作者 **橙汁本色**，见 `LICENSE` / `NOTICE` / `UPSTREAM-README.md`
