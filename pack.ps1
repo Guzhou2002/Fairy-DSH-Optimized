@@ -121,18 +121,27 @@ foreach ($key in $Catalog.Keys) {
   }
 }
 
-# install.cmd 也放进输出目录：群友在 Release 页只会看到一堆 tgz，不知道怎么办。
-# 它的永久地址 releases/latest/download/install.cmd 同样不带版本号，可长期引用。
-$installer = Join-Path $root 'install.cmd'
-if (Test-Path -LiteralPath $installer) {
-  Copy-Item -LiteralPath $installer -Destination (Join-Path $OutDir 'install.cmd') -Force
-} else {
-  Warn "没找到 install.cmd，输出目录里将没有安装器"
+# install.cmd / install_full.cmd 也放进输出目录：群友在 Release 页只会看到一堆 tgz，不知道怎么办。
+# 它们的永久地址 releases/latest/download/<文件名> 同样不带版本号，可长期引用。
+# 两个都要传：README 里两个入口都给了链接，少传一个那个链接就会 404。
+$installerFiles = @()
+foreach ($f in @('install.cmd', 'install_full.cmd')) {
+  $src = Join-Path $root $f
+  if (Test-Path -LiteralPath $src) {
+    Copy-Item -LiteralPath $src -Destination (Join-Path $OutDir $f) -Force
+    $installerFiles += $f
+  } else {
+    Warn "没找到 $f，输出目录里将没有它"
+  }
 }
 
 # ---------- 汇总 ----------
 $sums = Join-Path $OutDir 'SHA256SUMS.txt'
-$results | ForEach-Object { "$($_.SHA256)  $($_.文件)" } | Set-Content $sums -Encoding ascii
+$sumLines = @($results | ForEach-Object { "$($_.SHA256)  $($_.文件)" })
+foreach ($f in $installerFiles) {
+  $sumLines += "$((Get-FileHash -LiteralPath (Join-Path $OutDir $f) -Algorithm SHA256).Hash)  $f"
+}
+$sumLines | Set-Content $sums -Encoding ascii
 
 $total = ($results | Measure-Object -Property 字节 -Sum).Sum
 $local = ($results | ForEach-Object { Join-Path $OutDir $_.文件 }) -join ' '
@@ -152,8 +161,10 @@ Write-Host ""
 Write-Host "  本机安装测试：" -ForegroundColor White
 Write-Host "    dsh plugin --profile web add $local" -ForegroundColor DarkGray
 Write-Host ""
-Write-Host "  上传 GitHub Release —— 就这 6 个文件（都在 $OutDir）：" -ForegroundColor White
-Write-Host "    install.cmd          （双击就能装，给看不懂 tgz 的人）" -ForegroundColor DarkGray
+$fileCount = $results.Count + @($installerFiles).Count
+Write-Host "  上传 GitHub Release —— 就这 $fileCount 个文件（都在 $OutDir）：" -ForegroundColor White
+Write-Host "    install.cmd          （双击就能装，装 3 个安全插件）" -ForegroundColor DarkGray
+Write-Host "    install_full.cmd     （完整版 5 个，装前会先讲风险并要确认）" -ForegroundColor DarkGray
 foreach ($r in $results) { Write-Host "    $($r.文件)" -ForegroundColor DarkGray }
 Write-Host ""
 Write-Host "  传完后的永久地址（README 里用的就是这些，把 <用户名>/<仓库> 换掉）：" -ForegroundColor White
