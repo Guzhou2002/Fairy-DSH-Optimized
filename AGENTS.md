@@ -137,7 +137,7 @@ dsh plugin --profile web remove dsh-fairy-visual dsh-fairy-voice dsh-balance-met
 | --- | --- | --- |
 | 朗读按钮**是灰的** | 本机没跑 GPT-SoVITS（`127.0.0.1:9880`）—— **这是上游设计，不是故障** | 让用户跑自检面板。**你无法**替他启动 TTS 服务，也无法替他生成参考音频 |
 | 自检**第 2 项**失败 | SoVITS 不可达 | 让用户起服务，或改地址 / 端口（设置里可改，**改完即时生效、不用重启**） |
-| 自检**第 3 项**失败；或日志有 `ENOENT … fairy_ref.wav` / `fairy_ref.txt` | 缺参考音频 | 提示放 **3–10 秒干净人声**到 `~/.dsh/fairy-voice/runtime/reference/`。**`fairy_ref.txt` 缺失不影响出声** —— 宿主优雅回落到内置文案，不报错 |
+| 自检**第 3 项**失败；或日志有 `ENOENT … fairy_ref.wav` / `fairy_ref.txt` | 缺参考音频 | 提示放 **3–10 秒干净人声**到 `~/.dsh/fairy-voice/reference/`（该目录插件**启动时会自动建好**，里面附有 README.txt）。**`fairy_ref.txt` 缺失不影响出声** —— 宿主优雅回落到内置文案，不报错。历史位置 `runtime/reference/` 仍兼容 |
 | 自检**第 7 项「消息识别」** ❌；诊断里 `hasChat:false` / `chatKeys:[]` / `orderLength:-1`；**右下角出现红色提示框** | `chat` 被从 `useSession` 快照里拆走了（`0.1.2-rc.1` 那次改动，**0.3.1 已修**） | 若在 0.3.1 上**再次**出现 = DSH 又改了结构。看诊断里的 **`runningSource`**：长期是 `none` 说明兜底没命中，需要换数据源 |
 | 朗读控件 `.dsh-fairy-voice-auto` 数不到 | **三重前置**：装了 `fairy-visual` + HDD 视觉模式已开 + **在真实会话页面** | 首页与刚建的空白会话**不显示**，这是 DSH 自身设计 |
 | 宿主 `/prepare` 连不上 9880 却仍成功 | **正常**：`/prepare` 只做本地切句，**只有 `/tts` 才需要** SoVITS | 不用管。这条也是"浏览器引擎可离线"的依据 |
@@ -159,6 +159,28 @@ dsh plugin --profile web remove dsh-fairy-visual dsh-fairy-voice dsh-balance-met
 | 改动了任一插件包内容 | SHA256 会变 | 必须重新 `.\pack.ps1` → 更新 `docs\交接摘要.md` §8 的 SHA → 更新 Release 附件 → **tag 对齐** |
 | 改了 `lib\settings-merge.ps1`，或换了 `upstream-originals\` 里的原件 | 生成物已过期 | 重新生成，再 `node --check` 两个 `client.js` |
 | 改了 `install.cmd` / `install_full.cmd` | 这两个**在** Release 里，SHA 会变 | 按 §6.1 用 GBK 写回，并同步更新 SHA 与 Release 正文 |
+| 🔴 想把用户数据（参考音频 / API Key）挪进插件目录「好一起管理」 | **绝不可以** —— 见下面 §5.4.1 | 🛑 **停**。用户数据一律放 `~/.dsh/fairy-voice/` |
+
+#### 5.4.1 🔴 为什么用户数据【绝不能】放进插件目录
+
+**这不是风格问题，是丢数据问题。** 判据在「插件代码装在哪」：
+
+| 装法 | 插件代码落在 | 那个地方安全吗 |
+| --- | --- | --- |
+| 源码（`git clone` / `link:`） | `~/.dsh/plugins/…` 或你 clone 的目录 | 相对安全，但**升级 = `git pull` / 重 clone** |
+| **发布包（`dsh plugin add <tgz>`）** | **profile 下的 `node_modules`** | 🔴 **pnpm 随时会清掉、重建、按版本重装** |
+
+群友绝大多数是第二种。把「参考音频」「语音简报的 API Key」放进插件目录，
+等于把它们放在一个**升一次版本就没了**的地方。
+
+**所以规矩是**：
+
+- **用户数据** → `~/.dsh/fairy-voice/`（`reference/` 音色、`runtime/config.json` 设置、`voice-brain.json` 密钥）
+- 这个目录由插件**运行时**用 `homedir()` 自己建，**与插件装在哪、怎么装、装几次都无关**
+  （见 `lib/index.js` 的 `apply()` 里 `ensureFairyDirectories()` 的调用）
+- 这也是**上游本来的设计**，不要"优化"掉
+
+> 判据一句话：**任何会被 `pnpm install` / 插件重装影响到的目录，都不许放用户数据。**
 
 > 📌 **本次改动不影响 SHA**：`README.md` 与 `AGENTS.md` **不在任何 `.tgz` 里**（`pack.ps1` 只打 5 个插件目录 + 两个 `.cmd`）。
 
@@ -233,4 +255,7 @@ Windows 反斜杠会解析失败。另外 `link:` **不会**装依赖，只有 `
 | `docs\仓库与上游.md` | 如何合并上游更新 |
 | `docs\调研-同源项目Fairy-DSH-Exp.md` | 生态里的同源项目 + **DSH 运行时契约**（含"组 id 同名会卡死事件循环"） |
 | `docs\调研-CPU音色克隆引擎.md` | 无显卡可玩的音色克隆引擎调研（MOSS-TTS-Nano 等） |
+| **`docs\install-moss.md`** | ⭐ **给 AI Agent 的任务书：装 MOSS-TTS-Nano**（朗读的第二引擎，CPU 可跑）。用户说"朗读没显卡跑不动 / 装上 MOSS"时读这一份 |
+| `tools\install-moss.ps1` | 上面那份任务书要跑的**一键安装脚本**（6 个坑已写死，幂等，可重跑） |
+| `tools\moss-tts-server\` | `server.py`（MOSS 服务端，绕开 pynini）+ `verify.py`（验证器，随时可重跑） |
 | `legacy\README.md` | 已废弃的旧脚本 |

@@ -182,9 +182,11 @@ const report = await evaluate(`(() => {
       const panel = document.querySelector('[data-dsh-fairy-voice-panel]');
       return panel ? [...panel.querySelectorAll('h3')].map((h) => h.innerText.trim()) : null;
     })(),
-    onboardingBox: (() => {
-      const box = document.querySelector('[data-dsh-fairy-onboarding]');
-      return box ? { kind: box.getAttribute('data-dsh-fairy-onboarding'), text: box.innerText.trim().replace(/\\n+/g, ' | ') } : null;
+    /* [local patch 0.3.2] 面板顶部那个「还有必做的事没完成」大红框已拆掉，
+     * 待办改为各区块内的子条目。这里改查人设那条子条目（取不到就是 null，不报错）。 */
+    personaTodoNotice: (() => {
+      const notice = document.querySelector('[data-dsh-fairy-persona-todo]');
+      return notice ? notice.innerText.trim().replace(/\n+/g, ' | ') : null;
     })(),
     setupBadge: (() => {
       const trigger = document.querySelector('[data-slot="settings.trigger"]');

@@ -7710,23 +7710,24 @@ html[data-dsh-fairy-visual][data-dsh-fairy-theme="light"] [data-dsh-fairy-mascot
         className: 'dsh-fairy-notice',
         'data-dsh-fairy-notice': 'true',
         style: { fontSize: '11px', lineHeight: 1.6, opacity: 0.55, marginBottom: '12px' },
-        children: '当前版本 v0.3.1 · 最新打包时间 2026-09-13 22:29 · 本包为「孤舟蓑笠」基于「橙汁本色」开源项目的优化分支 · 交流群 1124349108'
+        children: '当前版本 v0.3.1 · 最新打包时间 2026-09-14 01:24 · 本包为「孤舟蓑笠」基于「橙汁本色」开源项目的优化分支 · 交流群 1124349108'
       });
     }
     // [local patch 0.2.3] 自检面板：面向完全不懂技术的使用者，每一项都给"怎么修"
     function FairyVoicePanel() {
       const [selfcheck, setSelfcheck] = React.useState({ running: true, ok: false, headline: '正在自检…', checks: [] });
-      const [configForm, setConfigForm] = React.useState({ ttsUrl: '', referenceAudioPath: '', defaultBase: '', defaultReferenceAudioPath: '', loaded: false, saving: false, message: '', error: false });
+      // [local patch 0.3.2] engine = 当前朗读引擎；sovitsBase/mossBase = 两个引擎各自记住的地址（切换不丢）
+      const [configForm, setConfigForm] = React.useState({ engine: 'gpt-sovits', ttsUrl: '', sovitsBase: '', mossBase: '', referenceAudioPath: '', defaultBase: '', defaultSovitsBase: '', defaultMossBase: '', defaultReferenceAudioPath: '', loaded: false, saving: false, message: '', error: false });
       const [diagText, setDiagText] = React.useState('');
       const [copyState, setCopyState] = React.useState('');
-      // [local patch 0.2.3] 首次使用提示：没看过时显示醒目红框，点过「我知道了」就记住
-      const [onboarded, setOnboarded] = React.useState(() => {
-        try { return window.localStorage.getItem('dsh.fairy.onboarded.v1') === '1'; } catch (error) { return false; }
-      });
-      const dismissOnboarding = React.useCallback(() => {
-        try { window.localStorage.setItem('dsh.fairy.onboarded.v1', '1'); } catch (error) { /* 存不了就每次显示，不影响功能 */ }
-        setOnboarded(true);
-      }, []);
+      // [local patch 0.3.2] 自检明细默认折叠。
+      // 原因：设置在前、自检在后，「看结果」不该挡住「改配置」；折叠后设置区永远在最上面。
+      // 注意：折叠的只是【明细】，结论那一行（✅/❌）始终可见，不用展开就知道好没好。
+      const [selfcheckOpen, setSelfcheckOpen] = React.useState(false);
+      /* [local patch 0.2.3 起有，0.3.2 移除] 原来是「首次使用大红框 + 我知道了，不再提示」。
+       * 那个框把 ①人设 和 ②语音 合在一起放在面板最上面，和下面各区块自己的状态重复，
+       * 而且逼着使用者去点一次"不再提示"。现在待办拆进各区块里（静态状态，不弹不打扰），
+       * 所以 localStorage 的 dsh.fairy.onboarded.v1 和那两个状态一起退休了。 */
       const [tick, setTick] = React.useState(0);
       const [brain, setBrain] = React.useState({ configured: false, text: '正在读取语音简报配置…', error: false });
       const [apiKey, setApiKey] = React.useState('');
@@ -7824,9 +7825,24 @@ html[data-dsh-fairy-visual][data-dsh-fairy-theme="light"] [data-dsh-fairy-mascot
         const timer = setInterval(() => setTick((value) => value + 1), 3000);
         return () => clearInterval(timer);
       }, []);
+      /* [local patch 0.3.2] 让自检拿到「最新的表单值」。
+       * runSelfCheck 是 useCallback([])，直接闭包会读到旧值，所以用 ref 取最新。
+       * 目的：引擎切成 MOSS 后【不保存也能直接测 MOSS】—— 宿主只做临时覆盖，不写磁盘。 */
+      const configFormRef = React.useRef(configForm);
+      React.useEffect(() => { configFormRef.current = configForm; }, [configForm]);
       const runSelfCheck = React.useCallback(() => {
-        setSelfcheck((prev) => ({ ...prev, running: true, headline: '正在自检：会真的让 SoVITS 合成一句话，通常几秒内完成…' }));
-        fetch('/fairy-voice/selfcheck', { cache: 'no-store' })
+        setSelfcheck((prev) => ({ ...prev, running: true, headline: '正在自检：会真的合成一句话，通常几秒内完成…' }));
+        // 表单还没加载完就不带参数，用磁盘上已保存的配置（打开面板时的首次自动自检走这条）。
+        const form = configFormRef.current;
+        let query = '';
+        if (form && form.loaded) {
+          const params = new URLSearchParams();
+          params.set('engine', form.engine);
+          params.set('base', String(form.ttsUrl || '').trim());
+          params.set('ref', String(form.referenceAudioPath || '').trim());
+          query = `?${params.toString()}`;
+        }
+        fetch(`/fairy-voice/selfcheck${query}`, { cache: 'no-store' })
           .then((response) => (response.ok ? response.json() : {
             ok: false,
             headline: `插件宿主没有响应（HTTP ${response.status}）：插件可能没加载，先重启 DSH 再试。`,
@@ -7851,9 +7867,15 @@ html[data-dsh-fairy-visual][data-dsh-fairy-theme="light"] [data-dsh-fairy-mascot
             if (!value) return;
             setConfigForm((prev) => ({
               ...prev,
+              // [local patch 0.3.2] 引擎与两个地址：base 是当前引擎的，sovitsBase/mossBase 各自留一份
+              engine: value.engine === 'moss-nano' ? 'moss-nano' : 'gpt-sovits',
               ttsUrl: String(value.base || ''),
+              sovitsBase: String(value.sovitsBase || ''),
+              mossBase: String(value.mossBase || ''),
               referenceAudioPath: String(value.referenceAudioPath || ''),
               defaultBase: String(value.defaultBase || ''),
+              defaultSovitsBase: String(value.defaultSovitsBase || ''),
+              defaultMossBase: String(value.defaultMossBase || ''),
               defaultReferenceAudioPath: String(value.defaultReferenceAudioPath || ''),
               loaded: true
             }));
@@ -7876,66 +7898,23 @@ html[data-dsh-fairy-visual][data-dsh-fairy-theme="light"] [data-dsh-fairy-mascot
         }
       }, [loadConfig, runSelfCheck]);
       const allChecks = selfcheck.checks.concat(clientChecks);
+      // [local patch 0.3.2] 当前引擎：决定「地址」那一栏叫什么、占位符是什么
+      const isMossEngine = configForm.engine === 'moss-nano';
       const failedChecks = allChecks.filter((check) => check.level === 'fail');
       const ready = failedChecks.length === 0 && selfcheck.running === false;
-      // [local patch 0.2.3] 醒目提示：必做的没做完就红着显示；语音没配好的首次提醒只出现一次
+      // [local patch 0.3.2] 人设这条待办显示在「人设预设」区块里（面板顶部的大红框已拆掉）
       const personaTodo = persona.installed !== true || persona.isDefault !== true;
-      const voiceTodo = failedChecks.length > 0;
-      const onboardingVisible = personaTodo || (!onboarded && voiceTodo);
-      const firstVoiceFailure = failedChecks.find((check) => check.id !== 'synthesis') || failedChecks[0] || null;
-      const onboardingBox = !onboardingVisible ? null : jsxs('div', {
-        'data-dsh-fairy-onboarding': personaTodo ? 'persona' : 'intro',
-        style: {
-          border: '2px solid var(--dsw-alias-state-error-primary, #d84a3a)',
-          background: 'color-mix(in srgb, var(--dsw-alias-state-error-primary, #d84a3a) 14%, transparent)',
-          borderRadius: '10px', padding: '14px 16px', display: 'grid', gap: '9px'
-        },
-        children: [
-          jsx('div', {
-            style: { fontSize: '15px', fontWeight: 700, color: 'var(--dsw-alias-state-error-primary, #d84a3a)' },
-            children: '⚠ 还有必做的事没完成，请按下面两步操作'
-          }),
-          jsxs('div', { style: { fontSize: '13px', lineHeight: 1.8 }, children: [
-            jsx('div', { style: { fontWeight: 700 }, children: `${personaTodo ? '①' : '✅'} Fairy 人设预设` }),
-            jsx('div', {
-              children: personaTodo
-                ? '　勾上下面「第 1 步」的开关，再点「一键设为默认预设」。做完之后，每开一个新会话都会自动带上 Fairy 人设。'
-                : '　已完成：预设已装好，并且是新会话的默认预设。'
-            })
-          ] }),
-          jsxs('div', { style: { fontSize: '13px', lineHeight: 1.8 }, children: [
-            jsx('div', { style: { fontWeight: 700 }, children: `${voiceTodo ? '②' : '✅'} 语音朗读（可选，不影响外观和人设）` }),
-            jsx('div', {
-              children: voiceTodo
-                ? `　现在还不能出声：${firstVoiceFailure ? firstVoiceFailure.detail : '见下面自检结果'}`
-                : '　已完成：朗读后端已经就绪。'
-            })
-          ] }),
-          jsxs('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '2px' }, children: [
-            personaTodo ? jsx('button', {
-              type: 'button', disabled: persona.busy || (!persona.installed && !persona.available),
-              'data-dsh-fairy-onboarding-fix-persona': 'true',
-              onClick: toggleDefaultPreset,
-              children: '一键开启人设（含设为默认）'
-            }) : null,
-            voiceTodo ? jsx('button', {
-              type: 'button', disabled: selfcheck.running,
-              onClick: runSelfCheck,
-              children: '开始自检（查语音为什么不能出声）'
-            }) : null,
-            jsx('button', { type: 'button', onClick: dismissOnboarding, children: '我知道了，不再提示' })
-          ] }),
-          jsx('div', {
-            style: { fontSize: '12px', lineHeight: 1.7, opacity: 0.8 },
-            children: '提示：这个红框在你把①做完之后就会消失；②是可选的，不做也没关系。'
-          })
-        ]
-      });
+      /* [local patch 0.3.2] 原来这里有一个「⚠ 还有必做的事没完成」的大红框，把 ①人设 和 ②语音
+       * 合在一起列在面板最上面。它和下面各区块自己的状态重复，看着多余 —— 现在拆掉了：
+       *   ① 人设 那条 → 留在「Fairy 人设预设」区块里（见那边的 personaTodo 红字子条目）
+       *   ② 语音 那条 → 留在「朗读自检」的结论行（❌ 时本来就会写清「还有 N 项没过」+ 怎么修）
+       * 这样每条待办只出现在它该出现的地方，也不用再让人点一次「不再提示」。 */
       const copyDiagnostics = React.useCallback(() => {
         const lines = [];
         lines.push(`Fairy-DSH 语音自检结果（${new Date().toLocaleString()}）`);
         lines.push(`结论：${selfcheck.headline}`);
-        lines.push(`SoVITS 地址：${configForm.ttsUrl || '（未读取到）'}`);
+        lines.push(`朗读引擎：${configForm.engine === 'moss-nano' ? 'MOSS-TTS-Nano' : 'GPT-SoVITS'}`);
+        lines.push(`${configForm.engine === 'moss-nano' ? 'MOSS' : 'SoVITS'} 地址：${configForm.ttsUrl || '（未读取到）'}`);
         lines.push(`参考音频：${configForm.referenceAudioPath || '（未读取到）'}`);
         for (const check of allChecks) {
           lines.push(`[${check.level}] ${check.title}：${check.detail}${check.fix ? `  → 怎么修：${check.fix}` : ''}`);
@@ -7957,6 +7936,37 @@ html[data-dsh-fairy-visual][data-dsh-fairy-theme="light"] [data-dsh-fairy-mascot
           setCopyState('自动复制失败，请手动选中下面的文字复制。');
         }
       }, [selfcheck, configForm, allChecks]);
+      /* [local patch 0.3.2] 一键复制「让 Agent 去装 MOSS」的说明。
+       * 为什么不放一个要手动全选的文本框：同一个面板上已经有「复制诊断信息」按钮了，
+       * 按钮 + 剪贴板是这套 UI 的既有做法，文本框要用户自己选、自己复制，是退步。 */
+      const copyInstallGuide = React.useCallback(() => {
+        const docUrl = 'https://raw.githubusercontent.com/Guzhou2002/Fairy-DSH-Optimized/main/docs/install-moss.md';
+        const text = [
+          '请帮我在这台电脑上安装 MOSS-TTS-Nano，作为 DSH 里 Fairy 朗读的第二个引擎。',
+          '',
+          `安装说明（请先完整读一遍再动手）：${docUrl}`,
+          '',
+          '要求：',
+          '1. 全程照那份文档做，不要自己发挥；文档里标了「🛑 停下问人」的地方，就停下来问我。',
+          '2. 不要改动我 ~/.dsh 里已有的任何文件，尤其不要动 profiles/ 目录。',
+          '3. 装完请自己验证一遍：服务能起来、/health 正常、并且真的能合成出一句话。',
+          '4. 最后告诉我：以后怎么启动这个服务，以及我需要在 DSH 的「设置 → Fairy → 朗读设置」里做什么。'
+        ].join('\n');
+        setDiagText(text);
+        setCopyState('');
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(
+              () => setCopyState('安装说明已复制 —— 直接粘贴给你的 AI Agent 就行。'),
+              () => setCopyState('自动复制被浏览器拦了，请手动选中下面的文字复制。')
+            );
+          } else {
+            setCopyState('这个浏览器不支持自动复制，请手动选中下面的文字复制。');
+          }
+        } catch (error) {
+          setCopyState('自动复制失败，请手动选中下面的文字复制。');
+        }
+      }, []);
       const loadBrain = React.useCallback(() => {
         fetch('/fairy-voice/brain/status', { cache: 'no-store' })
           .then((response) => (response.ok ? response.json() : { configured: false }))
@@ -8043,10 +8053,19 @@ html[data-dsh-fairy-visual][data-dsh-fairy-theme="light"] [data-dsh-fairy-mascot
         'data-dsh-fairy-voice-panel': 'true',
         style: { marginTop: '20px', paddingTop: '16px', borderTop: '1px solid var(--dsw-alias-border-l2, rgba(128,128,128,0.3))', display: 'flex', flexDirection: 'column', gap: '12px' },
         children: [
-          // [local patch 0.2.3] 打开设置就先看到醒目红框（首次使用 / 必做项未完成）
-          onboardingBox,
           // [local patch 0.2.3] 人设预设放在最前面：它是"看得见效果"的第一步，且新手最容易卡在这
           jsx('h3', { style: { margin: 0, fontSize: '14px' }, children: 'Fairy 人设预设' }),
+          /* [local patch 0.3.2] 待办子条目：人设没装好就【在这一区里】红字提醒。
+           * 原来这条躺在面板顶部的大红框里，和这里的状态重复；现在它只出现在它该出现的地方。 */
+          personaTodo ? jsx('div', {
+            'data-dsh-fairy-persona-todo': 'true',
+            style: {
+              border: '1px solid var(--dsw-alias-state-error-primary, #d84a3a)',
+              background: 'color-mix(in srgb, var(--dsw-alias-state-error-primary, #d84a3a) 12%, transparent)',
+              borderRadius: '6px', padding: '8px 10px', fontSize: '12px', lineHeight: 1.7
+            },
+            children: '人设还没做完：勾上下面「第 1 步」的开关把预设装上，再点「一键设为默认预设」。做完之后，每开一个新会话都会自动带上 Fairy 人设。'
+          }) : null,
           jsxs('label', { className: 'dsh-fairy-persona-row', 'data-dsh-fairy-persona': 'true', style: { display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', lineHeight: 1.7 }, children: [
             jsx('input', { type: 'checkbox', checked: persona.installed, disabled: persona.busy || !persona.available, onChange: togglePersona }),
             jsx('span', {
@@ -8087,49 +8106,97 @@ html[data-dsh-fairy-visual][data-dsh-fairy-theme="light"] [data-dsh-fairy-mascot
             children: '⚠ 人设只对「新建的会话」生效：已经开着的会话不会变，请新开一个会话看效果。'
           }),
           persona.error ? jsx('div', { style: { fontSize: '12px', color: 'var(--dsw-alias-state-error-primary, #d84a3a)' }, children: persona.error }) : null,
-          jsx('h3', { style: { margin: '10px 0 0', fontSize: '14px' }, children: '朗读功能自检' }),
-          jsx('div', {
-            'data-dsh-fairy-voice-status': ready ? 'ready' : 'blocked',
-            style: {
-              border: `1px solid ${ready ? 'var(--dsw-alias-state-success-primary, #2f9e44)' : 'var(--dsw-alias-state-error-primary, #d84a3a)'}`,
-              background: ready
-                ? 'color-mix(in srgb, var(--dsw-alias-state-success-primary, #2f9e44) 14%, transparent)'
-                : 'color-mix(in srgb, var(--dsw-alias-state-error-primary, #d84a3a) 16%, transparent)',
-              color: ready ? 'var(--dsw-alias-state-success-primary, #2f9e44)' : 'var(--dsw-alias-state-error-primary, #d84a3a)',
-              borderRadius: '8px', padding: '11px 13px', fontSize: '13px', lineHeight: 1.7, fontWeight: 700
-            },
-            children: selfcheck.running
-              ? `⏳ ${selfcheck.headline}`
-              : ready
-                ? `✅ 朗读功能已就绪。${selfcheck.headline}`
-                : `❌ 朗读还不能用：${selfcheck.headline}`
-          }),
-          jsxs('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap' }, children: [
-            jsx('button', {
-              type: 'button', disabled: selfcheck.running,
-              'data-dsh-fairy-selfcheck': 'true',
-              onClick: runSelfCheck,
-              children: selfcheck.running ? '正在自检…' : '开始自检（含试合成）'
+          jsx('h3', { style: { margin: '10px 0 0', fontSize: '14px' }, children: '朗读设置' }),
+          jsx('div', { style: { fontSize: '12px', lineHeight: 1.7, opacity: 0.7 }, children: '选引擎、填地址、指定参考音频。改完点「保存设置」即时生效，不用重启。' }),
+          /* [local patch 0.3.2] 两种引擎的优缺点对照，替代原来那句「当前用……」。
+           * 原来那句只讲当前这个引擎，使用者没法判断"要不要换"；这里两个都摆出来，
+           * 让他按自己的机器（有没有显卡、能不能接受等几秒）自己选。
+           * 布局用 auto-fit：面板宽就并排，窄就自动上下叠，窄面板下也不会挤成一团。 */
+          jsx('div', { style: { fontSize: '12px', lineHeight: 1.7, opacity: 0.7 }, children: '两个引擎各有所长，按你自己的机器选：' }),
+          jsxs('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(215px, 1fr))', gap: '8px', fontSize: '12px', lineHeight: 1.6 }, children: [
+            jsxs('div', {
+              style: { border: `1px solid ${isMossEngine ? 'var(--dsw-alias-border-l1, rgba(128,128,128,0.35))' : 'var(--dsw-alias-state-success-primary, #2f9e44)'}`, borderRadius: '6px', padding: '8px 10px' },
+              children: [
+                jsxs('div', { style: { fontWeight: 700, marginBottom: '4px' }, children: [
+                  jsx('span', { children: 'GPT-SoVITS（默认）' }),
+                  isMossEngine ? null : jsx('span', { style: { fontWeight: 400, opacity: 0.7 }, children: '　· 当前' })
+                ] }),
+                jsx('div', { children: '＋ 边合成边播，几乎不用等' }),
+                jsx('div', { children: '＋ 音色还原最好，生态成熟' }),
+                jsx('div', { children: '－ 要显卡；装起来重（6–9 GB）' }),
+                jsx('div', { children: '－ 得自己跑一个 Python 服务' })
+              ]
             }),
-            jsx('button', { type: 'button', onClick: copyDiagnostics, children: '复制诊断信息' }),
-            jsx('button', { type: 'button', onClick: () => { loadConfig(); runSelfCheck(); }, children: '重新自检' })
+            jsxs('div', {
+              style: { border: `1px solid ${isMossEngine ? 'var(--dsw-alias-state-success-primary, #2f9e44)' : 'var(--dsw-alias-border-l1, rgba(128,128,128,0.35))'}`, borderRadius: '6px', padding: '8px 10px' },
+              children: [
+                jsxs('div', { style: { fontWeight: 700, marginBottom: '4px' }, children: [
+                  jsx('span', { children: 'MOSS-TTS-Nano' }),
+                  isMossEngine ? jsx('span', { style: { fontWeight: 400, opacity: 0.7 }, children: '　· 当前' }) : null
+                ] }),
+                jsx('div', { children: '＋ 不挑显卡，CPU 就能跑' }),
+                jsx('div', { children: '＋ 一条命令装好（约 4–5 GB）' }),
+                jsx('div', { children: '－ 整句合成完才出声：2–3 秒的话要等约 7 秒' }),
+                jsx('div', { children: '－ 不做文本规范化，数字/符号读法可能不讲究' })
+              ]
+            })
           ] }),
-          copyState ? jsx('div', { style: { fontSize: '12px', opacity: 0.8 }, children: copyState }) : null,
-          jsx('div', { style: { display: 'flex', flexDirection: 'column', gap: '8px' }, children: allChecks.map(checkRow) }),
-          jsx('div', {
-            style: { fontSize: '12px', lineHeight: 1.7, opacity: 0.7 },
-            children: '提示：自动朗读开关和每条回复下方的朗读按钮，只会在真正的会话页面里出现；首页和刚新建的空白会话页不会显示，这是 DSH 本身的设计，不是插件坏了。'
-          }),
-          jsx('h3', { style: { margin: '6px 0 0', fontSize: '14px' }, children: '朗读服务设置' }),
-          jsx('div', { style: { fontSize: '12px', lineHeight: 1.7, opacity: 0.7 }, children: '默认连接本机的 GPT-SoVITS（http://127.0.0.1:9880）。如果你把它跑在别的端口或另一台电脑上，改下面第一栏即可；跑到别的电脑时，对方要监听 0.0.0.0 并在防火墙放行该端口。' }),
+          // [local patch 0.3.2] 引擎下拉。切换只是把输入框换成「另一个引擎自己记着的地址」，不改已保存的值。
           jsx('label', { style: { display: 'grid', gap: '4px', fontSize: '12px' }, children: [
-            jsx('span', { children: 'SoVITS 地址' }),
+            jsx('span', { children: '朗读引擎' }),
+            jsx('select', {
+              value: configForm.engine,
+              'data-dsh-fairy-engine': 'true',
+              style: inputStyle,
+              onChange: (event) => {
+                const next = event.target.value === 'moss-nano' ? 'moss-nano' : 'gpt-sovits';
+                setConfigForm((prev) => ({
+                  ...prev,
+                  engine: next,
+                  ttsUrl: next === 'moss-nano'
+                    ? (prev.mossBase || prev.defaultMossBase || '')
+                    : (prev.sovitsBase || prev.defaultSovitsBase || prev.defaultBase || '')
+                }));
+              },
+              children: [
+                jsx('option', { value: 'gpt-sovits', children: 'GPT-SoVITS（默认，上游原路）' }),
+                jsx('option', { value: 'moss-nano', children: 'MOSS-TTS-Nano（CPU 也能跑，需另装）' })
+              ]
+            })
+          ] }),
+          jsx('div', { style: { fontSize: '12px', lineHeight: 1.7, opacity: 0.7 }, children: '改完点「保存设置」才生效。想先试试新引擎通不通：直接点下面「重新自检」—— 它会用你眼前填的设置测，不用先保存。' }),
+          jsx('label', { style: { display: 'grid', gap: '4px', fontSize: '12px' }, children: [
+            jsx('span', { children: isMossEngine ? 'MOSS 地址' : 'SoVITS 地址' }),
             jsx('input', {
-              type: 'text', value: configForm.ttsUrl, placeholder: configForm.defaultBase || 'http://127.0.0.1:9880',
+              type: 'text', value: configForm.ttsUrl,
+              placeholder: (isMossEngine ? configForm.defaultMossBase : (configForm.defaultSovitsBase || configForm.defaultBase)) || 'http://127.0.0.1:9880',
               'data-dsh-fairy-tts-url': 'true', style: inputStyle,
               onChange: (event) => setConfigForm((prev) => ({ ...prev, ttsUrl: event.target.value }))
             })
           ] }),
+          // [local patch 0.3.2] 选了 MOSS 才出现的安装引导：不给文本框，给一个复制按钮。
+          isMossEngine ? jsxs('div', {
+            style: { display: 'flex', flexDirection: 'column', gap: '8px', padding: '10px 12px', border: '1px solid var(--dsw-alias-border-l1, rgba(128,128,128,0.35))', borderRadius: '6px' },
+            children: [
+              jsx('div', {
+                style: { fontSize: '12px', lineHeight: 1.7, opacity: 0.85 },
+                children: 'MOSS 需要先在这台电脑上装一套（本仓库带一键安装脚本，坑都写死了）。不想自己动手的话：点下面的按钮复制一段话，发给你的 AI Agent，它会照着一份写好的说明去装。'
+              }),
+              jsxs('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap' }, children: [
+                jsx('button', {
+                  type: 'button',
+                  'data-dsh-fairy-copy-install': 'true',
+                  onClick: copyInstallGuide,
+                  children: '复制安装说明（发给你的 AI Agent）'
+                }),
+                jsx('button', {
+                  type: 'button',
+                  onClick: () => { window.open('https://github.com/Guzhou2002/Fairy-DSH-Optimized/blob/main/docs/install-moss.md', '_blank'); },
+                  children: '自己看安装说明'
+                })
+              ] })
+            ]
+          }) : null,
           jsx('label', { style: { display: 'grid', gap: '4px', fontSize: '12px' }, children: [
             jsx('span', { children: '参考音频路径（.wav，3–10 秒干净人声）' }),
             jsx('input', {
@@ -8138,16 +8205,30 @@ html[data-dsh-fairy-visual][data-dsh-fairy-theme="light"] [data-dsh-fairy-mascot
               onChange: (event) => setConfigForm((prev) => ({ ...prev, referenceAudioPath: event.target.value }))
             })
           ] }),
+          /* [local patch 0.3.2] 说清楚这个文件到底在哪儿。
+           * 起因：`~/.dsh/fairy-voice` 和插件目录 `.../fairy-voice/dsh-fairy-voice` 名字太像，
+           * 连作者本人都误会成"参考音频应该在插件目录里"。默认位置已换到不像的
+           * `~/.dsh/fairy-DSH-voice-reference/`，这里再补一句话，免得再有人找错地方。 */
+          jsx('div', {
+            style: { fontSize: '12px', lineHeight: 1.7, opacity: 0.7 },
+            children: '注意：这个文件放在你的【用户目录】下，不在插件目录里 —— 插件升级、重装、换安装位置都不会把它弄丢。目录不存在的话，插件启动时会自动建好，里面还附一份 README.txt。'
+          }),
           jsxs('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap' }, children: [
             jsx('button', {
               type: 'button', disabled: configForm.saving,
               'data-dsh-fairy-save-config': 'true',
-              onClick: () => saveConfig({ ttsUrl: configForm.ttsUrl.trim(), referenceAudioPath: configForm.referenceAudioPath.trim() }),
+              onClick: () => saveConfig({ engine: configForm.engine, base: configForm.ttsUrl.trim(), referenceAudioPath: configForm.referenceAudioPath.trim() }),
               children: configForm.saving ? '保存中…' : '保存设置'
             }),
             jsx('button', {
               type: 'button', disabled: configForm.saving,
-              onClick: () => saveConfig({ ttsUrl: configForm.defaultBase || 'http://127.0.0.1:9880', referenceAudioPath: configForm.defaultReferenceAudioPath || '' }),
+              onClick: () => saveConfig({
+                engine: configForm.engine,
+                base: isMossEngine
+                  ? (configForm.defaultMossBase || '')
+                  : (configForm.defaultSovitsBase || configForm.defaultBase || ''),
+                referenceAudioPath: configForm.defaultReferenceAudioPath || ''
+              }),
               children: '恢复默认'
             })
           ] }),
@@ -8155,6 +8236,53 @@ html[data-dsh-fairy-visual][data-dsh-fairy-theme="light"] [data-dsh-fairy-mascot
             style: { fontSize: '12px', color: configForm.error ? 'var(--dsw-alias-state-error-primary, #d84a3a)' : 'var(--dsw-alias-state-success-primary, #2f9e44)' },
             children: configForm.message
           }) : null,
+          /* [local patch 0.3.2] 朗读自检挪到「朗读设置」下面 —— 先配置、后验证，跟人做事的顺序一致。
+           * 明细默认折叠，但结论那一行（✅/❌）始终显示：不展开也知道好没好。
+           * 版式是竖着三行：标题 / 开关 / 灰字说明。开关用一个 flex 包住，
+           * 否则在外层 flex-column 里会被拉满整行宽，很难看。
+           * copyState 放在折叠之外，因为「复制安装说明」按钮在设置区，折叠时也要能看到复制回执。 */
+          jsx('h3', { style: { margin: '10px 0 0', fontSize: '14px' }, children: '朗读自检' }),
+          jsx('div', { style: { display: 'flex', margin: '4px 0 0' }, children: jsx('button', {
+            type: 'button',
+            'data-dsh-fairy-selfcheck-toggle': 'true',
+            onClick: () => setSelfcheckOpen((prev) => !prev),
+            children: selfcheckOpen ? '收起明细' : '展开明细'
+          }) }),
+          jsx('div', { style: { fontSize: '12px', lineHeight: 1.7, opacity: 0.7, margin: '4px 0 0' }, children: '朗读不出声、或者朗读按钮是灰的？看这里。' }),
+          jsx('div', {
+            'data-dsh-fairy-voice-status': ready ? 'ready' : 'blocked',
+            style: {
+              border: `1px solid ${ready ? 'var(--dsw-alias-state-success-primary, #2f9e44)' : 'var(--dsw-alias-state-error-primary, #d84a3a)'}`,
+              background: ready
+                ? 'color-mix(in srgb, var(--dsw-alias-state-success-primary, #2f9e44) 14%, transparent)'
+                : 'color-mix(in srgb, var(--dsw-alias-state-error-primary, #d84a3a) 16%, transparent)',
+              color: ready ? 'var(--dsw-alias-state-success-primary, #2f9e44)' : 'var(--dsw-alias-state-error-primary, #d84a3a)',
+              borderRadius: '6px', padding: '8px 10px', fontSize: '12px', lineHeight: 1.6, fontWeight: 700
+            },
+            children: selfcheck.running
+              ? `⏳ ${selfcheck.headline}`
+              : ready
+                ? `✅ 朗读功能已就绪。${selfcheck.headline}`
+                : `❌ 朗读还不能用：${selfcheck.headline}${selfcheckOpen ? '' : ' —— 点「展开明细」看逐项原因和怎么修'}`
+          }),
+          copyState ? jsx('div', { style: { fontSize: '12px', opacity: 0.8 }, children: copyState }) : null,
+          selfcheckOpen ? jsxs('div', { style: { display: 'flex', flexDirection: 'column', gap: '8px' }, children: [
+            jsxs('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap' }, children: [
+              jsx('button', {
+                type: 'button', disabled: selfcheck.running,
+                'data-dsh-fairy-selfcheck': 'true',
+                onClick: runSelfCheck,
+                children: selfcheck.running ? '正在自检…' : '开始自检（含试合成）'
+              }),
+              jsx('button', { type: 'button', onClick: copyDiagnostics, children: '复制诊断信息' }),
+              jsx('button', { type: 'button', onClick: runSelfCheck, children: '重新自检' })
+            ] }),
+            jsx('div', { style: { display: 'flex', flexDirection: 'column', gap: '8px' }, children: allChecks.map(checkRow) }),
+            jsx('div', {
+              style: { fontSize: '12px', lineHeight: 1.7, opacity: 0.7 },
+              children: '提示：自动朗读开关和每条回复下方的朗读按钮，只会在真正的会话页面里出现；首页和刚新建的空白会话页不会显示，这是 DSH 本身的设计，不是插件坏了。'
+            })
+          ] }) : null,
           jsx('h3', { style: { margin: '6px 0 0', fontSize: '14px' }, children: '语音简报（可选）' }),
           jsx('div', { style: rowStyle, children: brain.text }),
           jsx('input', {
@@ -8170,8 +8298,12 @@ html[data-dsh-fairy-visual][data-dsh-fairy-theme="light"] [data-dsh-fairy-mascot
           jsx('h3', { style: { margin: '6px 0 0', fontSize: '14px' }, children: '诊断信息（排查用）' }),
           jsx('div', {
             style: { fontSize: '12px', lineHeight: 1.7, opacity: 0.7, maxWidth: '380px' },
-            children: '语音出问题时：点上面的「复制诊断信息」，再点下面这个框全选复制，两条一起发到群里（1124349108）。两个框里都没有聊天内容；诊断信息里带本机路径和自检结果，不想公开可以自行删掉。'
+            children: '语音出问题时：点下面这个按钮复制诊断信息，再把下面框里的内容全选复制，两条一起发到群里（1124349108）。两个框里都没有聊天内容；诊断信息里带本机路径和自检结果，不想公开可以自行删掉。'
           }),
+          // [local patch 0.3.2] 自检明细折叠后，原来那个「复制诊断信息」按钮可能被藏起来，
+          // 所以这里再放一个 —— 这一节的用途本来就是「把信息发出去」，按钮放这儿更顺手。
+          jsx('button', { type: 'button', 'data-dsh-fairy-copy-diagnostics': 'true', onClick: copyDiagnostics, children: '复制诊断信息' }),
+          copyState ? jsx('div', { style: { fontSize: '12px', opacity: 0.8 }, children: copyState }) : null,
           jsx('div', { style: { fontSize: '11px', opacity: 0.6 }, children: '结构摘要（只有字段名与类型，不含任何取值）' }),
           jsx('textarea', {
             readOnly: true, value: shapeText, rows: 6,

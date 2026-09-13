@@ -7,6 +7,7 @@ import { chmod, mkdir, open, readFile, rename, unlink, writeFile } from 'node:fs
 import { randomUUID } from 'node:crypto';
 import { createPcmStreamHandler } from './server/local-tts-proxy.js';
 import {
+  applyConfigOverrides,
   buildTtsTransport,
   readRuntimeConfig,
   readReferencePrompt,
@@ -594,6 +595,8 @@ export function createFairyVoiceHandlers({ fetchImpl = fetch, readConfig = readV
       }
     },
     // [local patch 0.2.3] 读取/保存 SoVITS 地址与参考音频路径（不含任何密钥）。
+    // [local patch 0.3.2] 新增 engine / base 字段：读走 readRuntimeConfig()、写走 saveRuntimeConfig()，
+    // 两者都已认得新字段，所以这里不需要额外分支 —— 请求体整体透传即可。
     config: async (req, res) => {
       if (req.method === 'GET' || req.method === 'HEAD') {
         sendJson(res, 200, readRuntimeConfig());
@@ -621,7 +624,14 @@ export function createFairyVoiceHandlers({ fetchImpl = fetch, readConfig = readV
       try {
         const url = new URL(req.url ?? '/', 'http://x');
         withSynthesis = url.searchParams.get('synth') !== '0';
-        sendJson(res, 200, await runVoiceSelfCheck({ fetchImpl, withSynthesis }));
+        /* [local patch 0.3.2] 用「界面上当前填的」临时覆盖已保存的配置（**不写磁盘**），
+         * 这样「引擎切成 MOSS → 点自检」测的就是 MOSS，不必先保存。 */
+        const config = applyConfigOverrides(readRuntimeConfig(), {
+          engine: url.searchParams.get('engine') ?? undefined,
+          base: url.searchParams.get('base') ?? undefined,
+          referenceAudioPath: url.searchParams.get('ref') ?? undefined,
+        });
+        sendJson(res, 200, await runVoiceSelfCheck({ fetchImpl, withSynthesis, config }));
       } catch (error) {
         diagnostics.warn('selfcheck.run', {}, error);
         sendJson(res, 200, {
@@ -639,6 +649,10 @@ export function createFairyVoiceHandlers({ fetchImpl = fetch, readConfig = readV
 
 export function apply(ctx) {
   return diagnostics.guard('apply', () => {
+  /* [local patch 0.3.2] 启动时把「参考音频」目录建出来（幂等，已有就不动）。
+   * 不建的话使用者根本不知道该把音色文件放哪儿 —— 自检只会干说「参考音频没找到」。
+   * 失败也不影响启动：日志里 warn 一下就好，不该因为一个目录建不出来就让插件挂掉。 */
+  void ensureFairyDirectories().catch((error) => diagnostics.warn('reference.dir', {}, error));
   const handlers = createFairyVoiceHandlers();
   ctx.inject(['webServer'], (ws) => ws.effect(() => {
     const unregisterStatus = ws.webServer.register({ kind: 'exact', path: '/fairy-voice/status', handler: handlers.status });

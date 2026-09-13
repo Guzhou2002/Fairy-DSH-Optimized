@@ -101,21 +101,56 @@ dsh plugin --profile web add `
 
 ---
 
-## 朗读功能：需要本机 GPT-SoVITS
+## 朗读功能：两条路线（GPT-SoVITS / MOSS-TTS-Nano）
 
-`dsh-fairy-voice` 的朗读**只走上游设计的本地 GPT-SoVITS 路线**：
+`dsh-fairy-voice` 的朗读有**两个引擎**，默认仍是上游设计的本机 GPT-SoVITS：
+
+| 引擎 | 需要什么 | 适合谁 |
+| --- | --- | --- |
+| **GPT-SoVITS**（默认，上游原路） | 本机跑 SoVITS（`127.0.0.1:9880`）+ 参考音频。**流式**：边合成边播 | 有显卡、想要最好的音色 |
+| **MOSS-TTS-Nano** | 装一套 MOSS（本机 `127.0.0.1:18083`）+ **同一个参考音频**。**CPU 就能跑**，不要显卡 | 没显卡、不想折腾 SoVITS |
+
+在 **设置 → Fairy → 朗读设置 → 朗读引擎** 里切换，**改完即时生效、不用重启**；
+两个引擎各自记住自己的地址，来回切换不会丢。**参考音频两份共用**，不用配两遍。
+
+> ⚠️ **MOSS 那条路要自己先装**：在仓库目录跑一条命令即可（坑都写死了，可重复运行）
+> ```powershell
+> .\tools\install-moss.ps1
+> ```
+> 不想自己动手的：**设置 → Fairy → 朗读设置** 里有「**复制安装说明**」按钮，
+> 把复制到的那段话发给你的 AI Agent，它会照着一份写好的说明去装。
+> 装好后本仓库配套的 `tools\moss-tts-server\server.py` 就是它的服务端 ——
+> 它为什么存在、为什么不用官方的 `app_onnx.py`，见下面「本地改动」里的说明。
+>
+> ⚠️ MOSS 是**整句合成完再出声**（不像 SoVITS 那样流式），所以按了朗读要等几秒才开始响，
+> 这是设计如此、不是卡住了。本机实测约 **0.45× 实时**（10.5 秒合成 4.7 秒语音）。
+
+### GPT-SoVITS 这条路的具体要求
 
 | 项 | 要求 |
 | --- | --- |
 | TTS 服务 | 默认本机 `http://127.0.0.1:9880`；**可在设置里改成别的端口或另一台机器** |
-| 参考音频 | `~/.dsh/fairy-voice/runtime/reference/fairy_ref.wav`（**路径可在设置里改**）；建议 3–10 秒干净人声 |
+| 参考音频 | `~/.dsh/fairy-voice/reference/fairy_ref.wav`（**路径可在设置里改**）；建议 3–10 秒干净人声。该目录**插件启动时自动创建** |
 | 参考文本 | 同目录 `fairy_ref.txt`（缺失时用内置回落文案，不影响出声） |
 
 没跑 GPT-SoVITS 时：**朗读按钮是灰色的**、不会出声 —— 这是上游设计，不是故障。
 
+### 你的东西放在哪（和插件代码是分开的）
+
+| | 路径 | 说明 |
+| --- | --- | --- |
+| **插件代码** | 源码装：你 clone 的目录 / `~/.dsh/plugins/…`<br>`dsh plugin add` 装：**profile 下的 `node_modules`** | 随时可能被重装、清掉、换版本 |
+| **你的数据** | `~/.dsh/fairy-voice/` | `reference/`（音色）、`runtime/config.json`（设置）、`voice-brain.json`（语音简报密钥） |
+
+**为什么必须分开**：`dsh plugin add <包>` 会把包**解进 profile 的 `node_modules`**，
+而那是 **pnpm 随时会重建**的目录 —— 把音色和 API Key 放进去，**升一次版本就没了**。
+
+所以你的东西一律留在 `~/.dsh/fairy-voice/`：它由插件**运行时**自己创建，
+**跟插件装在哪、怎么装、装几次都无关**。
+
 ### 先点一次「开始自检」（强烈建议）
 
-群友最常见的困惑是"朗读不好使"，却看不出卡在哪一层。设置 → **Fairy** → **朗读功能自检** → 点「开始自检」，
+群友最常见的困惑是"朗读不好使"，却看不出卡在哪一层。设置 → **Fairy** → **朗读自检** → 点「开始自检」，
 会逐项给出结论与修法（7 项）：插件宿主 / 本地朗读服务 / 参考音频 / **真实合成一句话** /
 浏览器音频能力 / 朗读控件是否挂上 / 消息识别。
 
@@ -128,7 +163,7 @@ dsh plugin --profile web add `
 
 原来有「HDD 视觉与 Fairy 身份」和「语音简报」两个入口，现在合并为一个：设置 → **Fairy**。里面还有：
 
-- **朗读服务设置**：`SoVITS 地址`、`参考音频路径` 可直接改并保存，**改完即时生效、无需重启**
+- **朗读设置**：`SoVITS 地址`（或 MOSS 地址）、`参考音频路径` 可直接改并保存，**改完即时生效、无需重启**
 - **语音简报（可选）**：原「语音简报」的 API Key 表单搬到了这里
 
 > 说明：`fairy-voice` **没有语音输入功能**。输入框左侧那个控件是「自动朗读开关 / 音量」，
@@ -211,6 +246,43 @@ DSH 升级后若界面元素变化，插件会**静默降级**（有 capability 
 ## 本地改动（相对上游）
 
 上游文件的所有改动都用 `[local patch 0.2.x]` 注释标注（Apache-2.0 §4(b) 对 modified files 的要求）。
+
+### 朗读引擎可切换：新增 MOSS-TTS-Nano（0.3.2，**尚未发版**）
+
+> **授权来源**：上游作者**橙汁本色**已明确同意本分支改动朗读逻辑（2026-09-13，口头授权）。
+> 这条红线原本是「`fairy-voice` 的朗读逻辑不许改」，本次是在获得作者同意后才动的。
+
+**为什么加**：上游的朗读硬编码单一 GPT-SoVITS，而 SoVITS 要显卡、要 6–9 GB、要 Python 3.10/3.11。
+MOSS-TTS-Nano（**Apache-2.0**，代码与权重都是）只 0.1B，**CPU 就能实时**，正好给没显卡的人一条路。
+
+**改了哪些文件**（全部带 `[local patch 0.3.2]` 注释）：
+
+| 文件 | 改动 |
+| --- | --- |
+| 🆕 `lib/server/moss-tts-transport.js` | 新引擎的传输层。与 `local-tts-proxy.js` **同形**（只暴露 `status()` / `stream()`），把 MOSS 回的 48 kHz 立体声 WAV 转成客户端要的 **32 kHz 单声道 Int16 裸 PCM** |
+| `lib/server/voice-selfcheck.js` | 配置新增 `engine` / `sovitsBase` / `mossBase`；`buildTtsTransport()` 按引擎分派；自检第 2 项与第 4 项改为**引擎感知** |
+| `lib/index.js` | **仅加注释**。`/fairy-voice/config` 是请求体整体透传，读写都走上面两个函数，不需要额外分支 |
+| `lib/settings-merge.ps1` | 面板加「朗读引擎」下拉 + 引擎感知的地址栏；保存时带上 `engine` |
+| `fairy-visual\…\lib\client.js` | **重新生成**（面板在这里） |
+| 🆕 `tools\moss-tts-server\server.py` | MOSS 的服务端（见下） |
+
+**没有改的地方**：**GPT-SoVITS 那条路一个字节都没动** —— `local-tts-proxy.js` 原样保留，
+自检里的 SoVITS 合成测试也是原样保留，只是前面多了一个 `if (engine === 'moss-nano')` 分支。
+
+**为什么另写一个服务端，而不用官方的 `app_onnx.py`**：
+官方服务在启动预热时**强制**加载 WeTextProcessing 文本规范化（`app.py` 第 220–229 行），
+而它依赖的 **pynini 在 PyPI 上没有任何 Windows 轮子**（实测：0 个 `win` 文件，只有 manylinux + 源码包），
+pip 安装等于现场编译、需要 MSVC 生成工具；官方 README 给的解法是 conda。
+本仓库的 `tools\moss-tts-server\server.py` 改走**官方命令行 `infer_onnx.py` 的同一条路**
+（`OnnxTtsRuntime`，不启用文本规范化），**接口与官方 `/api/generate` + `/health` 完全对齐**，
+因此零编译、零 conda。代价：数字/符号不做特殊读法处理。
+
+**已知限制（第一版有意为之）**：
+
+- MOSS 是**整句返回**，不是流式 —— 首字延迟明显比 SoVITS 长（本机实测约 0.45× 实时）
+- 未做真流式（要接 MOSS 的 4 个 `generate-stream` 端点，留待后续）
+- 尚未做「一键安装 MOSS」的脚本
+
 
 ### 分发方式（0.3.0 起）
 
