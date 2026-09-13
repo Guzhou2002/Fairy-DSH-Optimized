@@ -9,6 +9,7 @@ import { createPcmStreamHandler } from './server/local-tts-proxy.js';
 import {
   applyConfigOverrides,
   buildTtsTransport,
+  ensureFairyDirectories,
   readRuntimeConfig,
   readReferencePrompt,
   runVoiceSelfCheck,

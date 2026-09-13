@@ -7710,7 +7710,7 @@ html[data-dsh-fairy-visual][data-dsh-fairy-theme="light"] [data-dsh-fairy-mascot
         className: 'dsh-fairy-notice',
         'data-dsh-fairy-notice': 'true',
         style: { fontSize: '11px', lineHeight: 1.6, opacity: 0.55, marginBottom: '12px' },
-        children: '当前版本 v0.3.1 · 最新打包时间 2026-09-14 01:24 · 本包为「孤舟蓑笠」基于「橙汁本色」开源项目的优化分支 · 交流群 1124349108'
+        children: '当前版本 v0.3.3 · 最新打包时间 2026-09-14 02:25 · 本包为「孤舟蓑笠」基于「橙汁本色」开源项目的优化分支 · 交流群 1124349108'
       });
     }
     // [local patch 0.2.3] 自检面板：面向完全不懂技术的使用者，每一项都给"怎么修"

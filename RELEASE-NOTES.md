@@ -6,6 +6,44 @@
 
 ---
 
+## v0.3.3 变更
+
+> **这一版是紧急修包**：v0.3.2 的 `dsh-fairy-voice` 装上后**一重启 DSH 就起不来**。
+
+### 🔴 修复：v0.3.2 装上后 DSH 无法启动
+
+**症状**：升级到 v0.3.2 后重启 DSH，启动直接失败并打出：
+
+```
+Error: dsh: plugin tree failed to load: failed to apply loader entry fairy-voice (dsh-fairy-voice): ensureFairyDirectories is not defined
+ReferenceError: ensureFairyDirectories is not defined
+    at .../fairy-voice/dsh-fairy-voice/lib/index.js:655:3
+```
+
+**原因**：`dsh-fairy-voice` 的 `lib/index.js` 在启动时调用了 `ensureFairyDirectories()`，
+但这个函数定义在 `lib/server/voice-selfcheck.js` 里，而 `index.js` 的 import 清单**漏了它**。
+`node --check` 查不出这类错（语法没错，是运行时 ReferenceError，只有真正启动才会暴露），
+所以 v0.3.2 一路发布了出去 —— 它**从来没有被真正重启验证过**。
+
+**修复**：在 `index.js` 的 import 清单里补上 `ensureFairyDirectories`。
+
+**影响范围**：**只有 v0.3.2**。该函数是 0.3.2 新增的，v0.3.1 及更早版本没有这行调用，不受影响。
+
+**如果你已经装了 v0.3.2**：直接装本版覆盖即可，不需要先卸载。
+
+### 📦 包版本
+
+- `dsh-fairy-voice` 1.0.2 → **1.0.3**（修复本体）
+- `dsh-fairy-visual` 0.1.3 → **0.1.4**（设置面板顶部的版本号横幅跟随更新）
+- 其余 3 个包**字节未变**
+
+### ✅ 验证
+
+真实环境重启 DSH 通过：插件正常加载，MOSS-TTS-Nano 端到端合成通过
+（48000 Hz 立体声 → 自动转 32000 Hz 单声道）。
+
+---
+
 ## v0.3.2 变更
 
 > **这一版给朗读加了第二条路：没显卡也能用。** 另有一组设置面板的可读性重做。
