@@ -110,13 +110,21 @@ foreach ($key in $Catalog.Keys) {
   }
 }
 
-# ---------- 额外产出：不带版本号的文件名（上传 GitHub Release 用）----------
+# ---------- 额外产出：上传 GitHub Release 用的一整套 ----------
 if ($ReleaseNames) {
   Step "生成 Release 用文件名（不带版本号）"
   foreach ($r in $results) {
     Copy-Item (Join-Path $OutDir $r.文件) (Join-Path $OutDir "$($r.包名).tgz") -Force
   }
-  Ok "已额外生成 $($results.Count) 个不带版本号的副本"
+  # install.cmd 也一起放进来：群友可能在 Release 页只看到一堆 tgz，不知道怎么办。
+  # 它的永久地址 releases/latest/download/install.cmd 同样不带版本号，可长期引用。
+  $installer = Join-Path $root 'install.cmd'
+  if (Test-Path -LiteralPath $installer) {
+    Copy-Item -LiteralPath $installer -Destination (Join-Path $OutDir 'install.cmd') -Force
+    Ok "已额外生成 $($results.Count) 个不带版本号的副本 + install.cmd"
+  } else {
+    Warn "已生成 $($results.Count) 个不带版本号的副本（未找到 install.cmd，跳过）"
+  }
 }
 
 # ---------- 汇总 ----------
@@ -138,7 +146,8 @@ Write-Host "    dsh plugin --profile web add $local" -ForegroundColor DarkGray
 Write-Host ""
 
 if ($ReleaseNames) {
-  Write-Host "  上传 GitHub Release —— 请用这 5 个（不带版本号）：" -ForegroundColor White
+  Write-Host "  上传 GitHub Release —— 请用这 6 个（都不带版本号）：" -ForegroundColor White
+  Write-Host "    install.cmd          （双击就能装，给看不懂 tgz 的人）" -ForegroundColor DarkGray
   foreach ($r in $results) { Write-Host "    $($r.包名).tgz" -ForegroundColor DarkGray }
   Write-Host ""
   Write-Host "  传完后的永久地址（README 里用的就是这些，把 <用户名>/<仓库> 换掉）：" -ForegroundColor White
