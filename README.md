@@ -15,7 +15,7 @@
 
 ### 🤖 让 Agent 帮你装
 
-把下面这段话丢给你的 DSH / Codex Agent：
+把下面这段话丢给你的 DSH Agent：
 
 > 从 https://github.com/Guzhou2002/Fairy-DSH-Optimized 安装 `dsh-fairy-visual` 和
 > `dsh-balance-meter`和`dsh-fairy-voice` 到我的 web profile，**不要**装 `dsh-fairy-startup` 和 `dsh-browser-dock`。
