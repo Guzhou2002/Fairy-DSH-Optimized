@@ -245,104 +245,19 @@ DSH 升级后若界面元素变化，插件会**静默降级**（有 capability 
 
 ## 本地改动（相对上游）
 
-上游文件的所有改动都用 `[local patch 0.2.x]` 注释标注（Apache-2.0 §4(b) 对 modified files 的要求）。
+上游文件的所有改动都用 `[local patch 0.x.x]` 注释标注（Apache-2.0 §4(b) 对 modified files 的要求）。
 
-### 朗读引擎可切换：新增 MOSS-TTS-Nano（0.3.2，**尚未发版**）
+**完整说明已挪到独立文档**（内容太长，放 README 里会喧宾夺主）：
 
-> **授权来源**：上游作者**橙汁本色**已明确同意本分支改动朗读逻辑（2026-09-13，口头授权）。
-> 这条红线原本是「`fairy-voice` 的朗读逻辑不许改」，本次是在获得作者同意后才动的。
+> 📄 **[`docs/本地改动.md`](docs/本地改动.md)**
+>
+> 朗读引擎可切换 MOSS-TTS-Nano（0.3.2）· 消息识别适配（0.3.1）· 诊断信息与异常提示（0.3.1）
+> · 分发方式（0.3.0）· 朗读自检与地址可配置（0.2.3）· 设置栏合并（0.2.0）
 
-**为什么加**：上游的朗读硬编码单一 GPT-SoVITS，而 SoVITS 要显卡、要 6–9 GB、要 Python 3.10/3.11。
-MOSS-TTS-Nano（**Apache-2.0**，代码与权重都是）只 0.1B，**CPU 就能实时**，正好给没显卡的人一条路。
-
-**改了哪些文件**（全部带 `[local patch 0.3.2]` 注释）：
-
-| 文件 | 改动 |
-| --- | --- |
-| 🆕 `lib/server/moss-tts-transport.js` | 新引擎的传输层。与 `local-tts-proxy.js` **同形**（只暴露 `status()` / `stream()`），把 MOSS 回的 48 kHz 立体声 WAV 转成客户端要的 **32 kHz 单声道 Int16 裸 PCM** |
-| `lib/server/voice-selfcheck.js` | 配置新增 `engine` / `sovitsBase` / `mossBase`；`buildTtsTransport()` 按引擎分派；自检第 2 项与第 4 项改为**引擎感知** |
-| `lib/index.js` | **仅加注释**。`/fairy-voice/config` 是请求体整体透传，读写都走上面两个函数，不需要额外分支 |
-| `lib/settings-merge.ps1` | 面板加「朗读引擎」下拉 + 引擎感知的地址栏；保存时带上 `engine` |
-| `fairy-visual\…\lib\client.js` | **重新生成**（面板在这里） |
-| 🆕 `tools\moss-tts-server\server.py` | MOSS 的服务端（见下） |
-
-**没有改的地方**：**GPT-SoVITS 那条路一个字节都没动** —— `local-tts-proxy.js` 原样保留，
-自检里的 SoVITS 合成测试也是原样保留，只是前面多了一个 `if (engine === 'moss-nano')` 分支。
-
-**为什么另写一个服务端，而不用官方的 `app_onnx.py`**：
-官方服务在启动预热时**强制**加载 WeTextProcessing 文本规范化（`app.py` 第 220–229 行），
-而它依赖的 **pynini 在 PyPI 上没有任何 Windows 轮子**（实测：0 个 `win` 文件，只有 manylinux + 源码包），
-pip 安装等于现场编译、需要 MSVC 生成工具；官方 README 给的解法是 conda。
-本仓库的 `tools\moss-tts-server\server.py` 改走**官方命令行 `infer_onnx.py` 的同一条路**
-（`OnnxTtsRuntime`，不启用文本规范化），**接口与官方 `/api/generate` + `/health` 完全对齐**，
-因此零编译、零 conda。代价：数字/符号不做特殊读法处理。
-
-**已知限制（第一版有意为之）**：
-
-- MOSS 是**整句返回**，不是流式 —— 首字延迟明显比 SoVITS 长（本机实测约 0.45× 实时）
-- 未做真流式（要接 MOSS 的 4 个 `generate-stream` 端点，留待后续）
-- 尚未做「一键安装 MOSS」的脚本
-
-
-### 分发方式（0.3.0 起）
-
-- 分发物从「zip + 安装器」换成 **5 个 `.tgz` + `install.cmd`**：群友只需下载一个文件、双击
-- 每个插件包自带 `dsh.bundle` 声明，`dsh plugin add` 一条命令完成「安装 + 激活」
-- `dsh-fairy-contracts` 的源码**内联进各包的 `vendor/`**，依赖里移除 —— 于是每个包都能独立分发
-- 依赖改为 **hoisted 扁平布局**，包内 `node_modules` 零符号链接
-
-### 消息识别适配：DSH 0.1.2-rc.1（0.3.1）
-
-**症状**：设置 → Fairy 自检第 7 项「消息识别」永远 ❌；`useSession` 快照里根本没有 `chat`。
-
-**根因**：DSH `0.1.2-rc.1` 把聊天内容从 `useSession` 快照中拆了出去。
-会话槽位（`conversation.input.left`）另外提供了 `useChat` / `useConversation` / `useProjection` /
-`useTrajectory` 等 hook，其中 **`useChat` 返回的正是旧的 `chat` 结构**
-（`order` / `nodes` / `timeline.turnOrder` / `timeline.turns` / `legacy.nodes`）。
-
-**改法**（只动「读消息的适配层」，朗读、合成、播放逻辑一行未改）：
-
-- `VoiceController` 增加 `const __fairyChatValue = useChat((value) => value);`
-- 选择器改为 `useSession(React.useCallback((v) => readVoiceTimeline(v, __fairyChatValue), [__fairyChatValue]))`
-- `readVoiceTimeline(snapshot, __fairyChat)` 新增第二入参：`const chat = __fairyChat || snapshot?.chat;`
-  —— 取不到时回落到旧结构，**兼容旧版 DSH**
-- 其余 `snapshot?.chat?.legacy?.*` 改读 `chat?.legacy?.*`
-- **`runningCalls` 兼容**：新结构的 `legacy` **不再提供 `runningCalls`**（原来用来判断"正在跑工具"）。
-  现在改为**双来源**：先走 `legacy.runningCalls`，取不到就从 `chat.nodes.byKey` 里挑
-  `status === 'running'` 且 kind 含 `tool` 的节点兜底；两条都空就跳过。
-  诊断里的 `runningSource` 会告诉你这次用的是哪条：`legacy` / `nodes` / `none`
-  —— 若长时间是 `none`，说明兜底没命中，需要换数据源（见 `docs\接手-2026-09-13.md`）
-
-### 诊断信息与异常提示（0.3.1）
-
-- `fairy-voice` 的诊断通道新增 `structure` 字段：只输出**字段名 + 类型**（最多两层），
-  仍然**不含任何字段取值 / 对话内容**；同时上报会话槽位 props、`ctx` 服务名与 `useChat` 的结构
-- 设置 → Fairy 面板**最底部**统一为「**诊断信息（排查用）**」一栏（文本框**收窄到 380px**）：
-  上面是结构摘要，点「复制诊断信息」后下面出现完整诊断文本
-- **右下角异常提示**：检测到「读不到会话消息」（即本次修的这个故障再度发生）时，
-  会出现右下角红色提示框（与「预设未启用」提示同位置），带「稍后再说（静默 6 小时）」
-  「不再提示（30 天）」；正常时**不出现**
-- 判定条件是 `timelineRead === true && hasChat !== true`，因此**不会**因为用户没装 SoVITS、
-  或主动关掉 HDD 视觉模式而弹窗
-
-### 朗读自检 + 地址/参考音频可配置（0.2.3）
-
-- 宿主新增 `GET /fairy-voice/selfcheck`、`GET|POST /fairy-voice/config`
-- TTS 传输层改为**按当前配置构造**：改地址/参考音频后立即生效，不必重启 DSH
-- 自检的「实际合成测试」会真的合成一句话并统计返回字节数，这是后端能否出声最硬的证据
-- `fairy-voice` 客户端加了一条**诊断通道**（`globalThis.__FAIRY_VOICE_DIAG__`），
-  只上报结构信息（字段名与数量），**不含任何对话内容**
-
-### 设置栏合并（0.2.0）
-
-- `fairy-voice` 不再注册自己的 `settings.section`，统一并进 `fairy-visual` 的 Fairy 面板
-
-> **没有**改动任何朗读业务逻辑：引擎仍是上游的 `fairy`（GPT-SoVITS）。
-> 历史：0.1.x 曾尝试切到浏览器内置语音以摆脱 GPT-SoVITS 依赖，因官方会话投影结构漂移等问题**放弃**，
-> 相关补丁归档在 `legacy\`。
+一句话版本：**表现层（人设语料 / 布局 / 样式）自始至终一个字节没动**；
+改的都是安装分发、设置面板、朗读的读取适配层与引擎分支 —— 每处都有 `[local patch]` 注释，上面那份文档逐条对应。
 
 ---
-
 ## 许可与归属
 
 - **上游原创代码**：Apache License 2.0，作者 **橙汁本色**，见 `LICENSE` / `NOTICE` / `UPSTREAM-README.md`
@@ -365,9 +280,12 @@ pip 安装等于现场编译、需要 MSVC 生成工具；官方 README 给的�
 | 文件 | 内容 |
 | --- | --- |
 | [`AGENTS.md`](AGENTS.md) | **给 AI Agent 看的**：标准安装指令、可装/不可装清单、**故障判定表（含"该停下来问人"的清单）** |
+| **[`docs\本地改动.md`](docs/本地改动.md)** | **本分支相对上游改了什么、为什么改**（分发方式 / 消息识别适配 / 诊断面板 / MOSS 引擎 / 设置栏合并） |
 | `docs\交接摘要.md` | 给接手者：当前状态、待办、踩过的坑（含 `.cmd` 编码陷阱） |
 | `docs\安装机制实测.md` | `dsh plugin add` 各种形态的实测记录 |
 | `docs\仓库与上游.md` | 怎么合并上游更新 |
+| `docs\改动清单.md` | 相对上游的文件分类清单（新增 / 修改 / 改名 / 删除） |
+| `docs\install-moss.md` | **给 AI Agent 的任务书**：装 MOSS-TTS-Nano（朗读的第二引擎，CPU 可跑） |
 | `docs\调研-同源项目Fairy-DSH-Exp.md` | 生态里的同源项目 + **DSH 运行时契约**（含"组 id 同名会卡死事件循环"） |
 | `docs\调研-CPU音色克隆引擎.md` | 无显卡可玩的音色克隆引擎调研（MOSS-TTS-Nano 等） |
 | `docs\旧版说明-v0.2.3.md` | **v0.2.3 及之前的旧文档存档**（已不适用，仅备查） |
