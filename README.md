@@ -18,10 +18,9 @@
 把下面这段话丢给你的 DSH / Codex Agent：
 
 > 从 https://github.com/Guzhou2002/Fairy-DSH-Optimized 安装 `dsh-fairy-visual` 和
-> `dsh-balance-meter` 到我的 web profile，**不要**装 `dsh-fairy-startup` 和 `dsh-browser-dock`。
+> `dsh-balance-meter`和`dsh-fairy-voice` 到我的 web profile，**不要**装 `dsh-fairy-startup` 和 `dsh-browser-dock`。
+> 更完整的说明见 **[AGENTS.md](AGENTS.md)**。
 > 装完执行 `dsh --profile web --dump-config` 确认已经挂载。
-
-更完整的说明见 **[AGENTS.md](AGENTS.md)**。
 
 
 ### 🟢 完全不懂技术 → 下载、双击
