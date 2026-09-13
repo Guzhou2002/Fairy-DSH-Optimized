@@ -7710,14 +7710,18 @@ html[data-dsh-fairy-visual][data-dsh-fairy-theme="light"] [data-dsh-fairy-mascot
         className: 'dsh-fairy-notice',
         'data-dsh-fairy-notice': 'true',
         style: { fontSize: '11px', lineHeight: 1.6, opacity: 0.55, marginBottom: '12px' },
-        children: '当前版本 v0.3.3 · 最新打包时间 2026-09-14 02:25 · 本包为「孤舟蓑笠」基于「橙汁本色」开源项目的优化分支 · 交流群 1124349108'
+        children: '当前版本 v0.3.4 · 最新打包时间 2026-09-14 03:39 · 本包为「孤舟蓑笠」基于「橙汁本色」开源项目的优化分支 · 交流群 1124349108'
       });
     }
     // [local patch 0.2.3] 自检面板：面向完全不懂技术的使用者，每一项都给"怎么修"
     function FairyVoicePanel() {
       const [selfcheck, setSelfcheck] = React.useState({ running: true, ok: false, headline: '正在自检…', checks: [] });
       // [local patch 0.3.2] engine = 当前朗读引擎；sovitsBase/mossBase = 两个引擎各自记住的地址（切换不丢）
-      const [configForm, setConfigForm] = React.useState({ engine: 'gpt-sovits', ttsUrl: '', sovitsBase: '', mossBase: '', referenceAudioPath: '', defaultBase: '', defaultSovitsBase: '', defaultMossBase: '', defaultReferenceAudioPath: '', loaded: false, saving: false, message: '', error: false });
+      /* [local patch 0.3.4] saved* 三个字段是「服务端已保存的值」的快照，
+       * 用来判断表单有没有未保存的改动（见下面的 isConfigDirty）。
+       * 放在 state 里而不是 ref 里：保存后 loadConfig() 会重刷快照，
+       * 于是 dirty 自动归零，不需要在 saveConfig 里额外挂钩子。 */
+      const [configForm, setConfigForm] = React.useState({ engine: 'gpt-sovits', ttsUrl: '', sovitsBase: '', mossBase: '', referenceAudioPath: '', defaultBase: '', defaultSovitsBase: '', defaultMossBase: '', defaultReferenceAudioPath: '', savedEngine: 'gpt-sovits', savedTtsUrl: '', savedReferenceAudioPath: '', loaded: false, saving: false, message: '', error: false });
       const [diagText, setDiagText] = React.useState('');
       const [copyState, setCopyState] = React.useState('');
       // [local patch 0.3.2] 自检明细默认折叠。
@@ -7877,6 +7881,10 @@ html[data-dsh-fairy-visual][data-dsh-fairy-theme="light"] [data-dsh-fairy-mascot
               defaultSovitsBase: String(value.defaultSovitsBase || ''),
               defaultMossBase: String(value.defaultMossBase || ''),
               defaultReferenceAudioPath: String(value.defaultReferenceAudioPath || ''),
+              // [local patch 0.3.4] 同时刷新「已保存」快照，dirty 状态随之归零
+              savedEngine: value.engine === 'moss-nano' ? 'moss-nano' : 'gpt-sovits',
+              savedTtsUrl: String(value.base || ''),
+              savedReferenceAudioPath: String(value.referenceAudioPath || ''),
               loaded: true
             }));
           })
@@ -7900,6 +7908,25 @@ html[data-dsh-fairy-visual][data-dsh-fairy-theme="light"] [data-dsh-fairy-mascot
       const allChecks = selfcheck.checks.concat(clientChecks);
       // [local patch 0.3.2] 当前引擎：决定「地址」那一栏叫什么、占位符是什么
       const isMossEngine = configForm.engine === 'moss-nano';
+      /* [local patch 0.3.4] 选中引擎的唯一入口 —— 上面的下拉框和下面的两个引擎卡片都走这里，
+       * 保证两条路行为完全一致（都只改表单、不立即保存；都跟着把地址框换成该引擎自己的地址）。 */
+      const selectEngine = React.useCallback((next) => {
+        setConfigForm((prev) => ({
+          ...prev,
+          engine: next,
+          ttsUrl: next === 'moss-nano'
+            ? (prev.mossBase || prev.defaultMossBase || '')
+            : (prev.sovitsBase || prev.defaultSovitsBase || prev.defaultBase || '')
+        }));
+      }, []);
+      /* [local patch 0.3.4] 「改动过、但还没保存」。
+       * 只比这三个真正影响朗读的字段；default* 是占位符提示，不参与比较。
+       * loadConfig 在加载成功和保存成功后都会跑，所以保存完这里会自动回到 false。 */
+      const isConfigDirty = configForm.loaded === true && (
+        configForm.engine !== configForm.savedEngine
+        || String(configForm.ttsUrl || '').trim() !== String(configForm.savedTtsUrl || '').trim()
+        || String(configForm.referenceAudioPath || '').trim() !== String(configForm.savedReferenceAudioPath || '').trim()
+      );
       const failedChecks = allChecks.filter((check) => check.level === 'fail');
       const ready = failedChecks.length === 0 && selfcheck.running === false;
       // [local patch 0.3.2] 人设这条待办显示在「人设预设」区块里（面板顶部的大红框已拆掉）
@@ -8112,10 +8139,13 @@ html[data-dsh-fairy-visual][data-dsh-fairy-theme="light"] [data-dsh-fairy-mascot
            * 原来那句只讲当前这个引擎，使用者没法判断"要不要换"；这里两个都摆出来，
            * 让他按自己的机器（有没有显卡、能不能接受等几秒）自己选。
            * 布局用 auto-fit：面板宽就并排，窄就自动上下叠，窄面板下也不会挤成一团。 */
-          jsx('div', { style: { fontSize: '12px', lineHeight: 1.7, opacity: 0.7 }, children: '两个引擎各有所长，按你自己的机器选：' }),
+          jsx('div', { style: { fontSize: '12px', lineHeight: 1.7, opacity: 0.7 }, children: '两个引擎各有所长，按你自己的机器选（直接点卡片也行）：' }),
           jsxs('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(215px, 1fr))', gap: '8px', fontSize: '12px', lineHeight: 1.6 }, children: [
             jsxs('div', {
-              style: { border: `1px solid ${isMossEngine ? 'var(--dsw-alias-border-l1, rgba(128,128,128,0.35))' : 'var(--dsw-alias-state-success-primary, #2f9e44)'}`, borderRadius: '6px', padding: '8px 10px' },
+              /* [local patch 0.3.4] 卡片由「只能看」改成「能点」：点了就选中这个引擎。
+               * 与下拉框共用 selectEngine —— 只改表单、不立即保存，保存统一走下面的按钮。 */
+              onClick: () => selectEngine('gpt-sovits'),
+              style: { border: `1px solid ${isMossEngine ? 'var(--dsw-alias-border-l1, rgba(128,128,128,0.35))' : 'var(--dsw-alias-state-success-primary, #2f9e44)'}`, borderRadius: '6px', padding: '8px 10px', cursor: 'pointer' },
               children: [
                 jsxs('div', { style: { fontWeight: 700, marginBottom: '4px' }, children: [
                   jsx('span', { children: 'GPT-SoVITS（默认）' }),
@@ -8128,7 +8158,8 @@ html[data-dsh-fairy-visual][data-dsh-fairy-theme="light"] [data-dsh-fairy-mascot
               ]
             }),
             jsxs('div', {
-              style: { border: `1px solid ${isMossEngine ? 'var(--dsw-alias-state-success-primary, #2f9e44)' : 'var(--dsw-alias-border-l1, rgba(128,128,128,0.35))'}`, borderRadius: '6px', padding: '8px 10px' },
+              onClick: () => selectEngine('moss-nano'),
+              style: { border: `1px solid ${isMossEngine ? 'var(--dsw-alias-state-success-primary, #2f9e44)' : 'var(--dsw-alias-border-l1, rgba(128,128,128,0.35))'}`, borderRadius: '6px', padding: '8px 10px', cursor: 'pointer' },
               children: [
                 jsxs('div', { style: { fontWeight: 700, marginBottom: '4px' }, children: [
                   jsx('span', { children: 'MOSS-TTS-Nano' }),
@@ -8148,23 +8179,33 @@ html[data-dsh-fairy-visual][data-dsh-fairy-theme="light"] [data-dsh-fairy-mascot
               value: configForm.engine,
               'data-dsh-fairy-engine': 'true',
               style: inputStyle,
-              onChange: (event) => {
-                const next = event.target.value === 'moss-nano' ? 'moss-nano' : 'gpt-sovits';
-                setConfigForm((prev) => ({
-                  ...prev,
-                  engine: next,
-                  ttsUrl: next === 'moss-nano'
-                    ? (prev.mossBase || prev.defaultMossBase || '')
-                    : (prev.sovitsBase || prev.defaultSovitsBase || prev.defaultBase || '')
-                }));
-              },
+              // [local patch 0.3.4] 与卡片共用 selectEngine，两条路的落点一致
+              onChange: (event) => selectEngine(event.target.value === 'moss-nano' ? 'moss-nano' : 'gpt-sovits'),
               children: [
                 jsx('option', { value: 'gpt-sovits', children: 'GPT-SoVITS（默认，上游原路）' }),
                 jsx('option', { value: 'moss-nano', children: 'MOSS-TTS-Nano（CPU 也能跑，需另装）' })
               ]
             })
           ] }),
-          jsx('div', { style: { fontSize: '12px', lineHeight: 1.7, opacity: 0.7 }, children: '改完点「保存设置」才生效。想先试试新引擎通不通：直接点下面「重新自检」—— 它会用你眼前填的设置测，不用先保存。' }),
+          /* [local patch 0.3.4] 这行提示平时是灰的说明文字；只要表单改过、还没保存，
+           * 就变成红色粗体警示 —— 因为「改了没保存」是这一步最常见的坑。 */
+          jsx('div', {
+            style: isConfigDirty
+              ? { fontSize: '12px', lineHeight: 1.7, fontWeight: 700, color: 'var(--dsw-alias-state-error-primary, #d84a3a)' }
+              : { fontSize: '12px', lineHeight: 1.7, opacity: 0.7 },
+            children: isConfigDirty
+              ? '⚠ 上面的改动还没保存 —— 点下面的「保存设置」才生效。想先试试新引擎通不通：直接点「重新自检」，它会用你眼前填的设置去测，不用先保存。'
+              : '改完点「保存设置」才生效。想先试试新引擎通不通：直接点下面「重新自检」—— 它会用你眼前填的设置测，不用先保存。'
+          }),
+          /* [local patch 0.3.4] 只在选中 MOSS 时出现的一句提醒。
+           * 起因：实测发现念出来的高频特质几乎 1:1 继承自参考音频（换参考 = 换音色），
+           * 而多数人会随手抓一段带降噪痕迹的音频，结果就是发闷、发毛。
+           * 用面板里既有的土黄警示色（与人设那行 ⚠ 同色），不加边框 ——
+           * 免得和下面的安装引导框叠成两层框。 */
+          isMossEngine ? jsx('div', {
+            style: { fontSize: '12px', lineHeight: 1.7, fontWeight: 600, color: 'var(--dsw-alias-state-warning-primary, #c98a00)' },
+            children: '⚠ 念出来的音色几乎完全由「参考音频」决定 —— 请按 reference\\README.txt 的要求放一段干净人声（48 kHz、峰值 -1 ~ -3 dB、别用降噪处理过的），否则会发闷、发毛。'
+          }) : null,
           jsx('label', { style: { display: 'grid', gap: '4px', fontSize: '12px' }, children: [
             jsx('span', { children: isMossEngine ? 'MOSS 地址' : 'SoVITS 地址' }),
             jsx('input', {

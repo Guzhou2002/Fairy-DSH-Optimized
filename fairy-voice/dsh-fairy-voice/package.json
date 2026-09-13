@@ -1,6 +1,6 @@
 {
   "name": "dsh-fairy-voice",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "private": true,
   "type": "module",
   "main": "./lib/index.js",
