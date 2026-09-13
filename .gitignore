@@ -1,11 +1,15 @@
-# ---- 依赖：用 pnpm install 重建，不进仓库（发布包里的 node_modules 由 build-release.ps1 生成）----
+# ---- 依赖：用 pnpm install 重建，不进仓库 ----
+# 0.3.0 起发布物是 5 个 .tgz，依赖由 pnpm 在安装时自动补齐，
+# 仓库里和包里都不再存放 node_modules。
 node_modules/
 **/node_modules/
 .pnpm-store/
 
 # ---- 分发产物：走 GitHub Releases / QQ 群，不进历史 ----
+# .tgz 是 0.3.0 起的插件包格式；.zip 是 0.2.3 及之前的旧格式（保留忽略，防止误提交）
 release/
 *.zip
+*.tgz
 *.sha256
 
 # ---- 本地生成物 ----
