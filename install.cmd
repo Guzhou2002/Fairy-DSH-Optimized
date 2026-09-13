@@ -60,7 +60,10 @@ echo.
 echo   正在安装插件（要联网，可能要几分钟）...
 echo   下面这段是 pnpm 的输出，带版本号的那几行就是刚装上的版本。
 echo.
-dsh plugin --profile %PROFILE% add ^
+rem 必须用 call！dsh 是 npm 生成的 dsh.cmd ——
+rem 批处理里不加 call 调用另一个 .cmd，当前脚本会直接把控制权交出去、永不返回，
+rem 后面的人设预设步骤就永远执行不到（实测踩过）。
+call dsh plugin --profile %PROFILE% add ^
   "%BASE%/dsh-fairy-visual.tgz" ^
   "%BASE%/dsh-fairy-voice.tgz" ^
   "%BASE%/dsh-balance-meter.tgz" ^
