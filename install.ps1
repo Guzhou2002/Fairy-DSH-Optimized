@@ -90,6 +90,17 @@ if (-not (Get-Command pnpm -ErrorAction SilentlyContinue)) {
 # ---------- ② 装插件 ----------
 Say "  正在安装插件（要联网，可能要几分钟）..." 'Cyan'
 Write-Host ""
+
+# 装之前先记下已装版本，装完好对比给使用者看
+$dshHome = if ($env:DSH_HOME) { $env:DSH_HOME } else { Join-Path $HOME '.dsh' }
+function Get-InstalledVersion([string]$Name) {
+  $m = Join-Path $dshHome "profiles\$Profile\node_modules\$Name\package.json"
+  if (-not (Test-Path -LiteralPath $m)) { return $null }
+  try { (Get-Content -LiteralPath $m -Raw | ConvertFrom-Json).version } catch { $null }
+}
+$before = @{}
+foreach ($k in $keys) { $before[$k] = Get-InstalledVersion $Plugins[$k] }
+
 $urls = @($keys | ForEach-Object { "$Base/$($Plugins[$_]).tgz" })
 & dsh plugin --profile $Profile add @urls
 
@@ -107,6 +118,16 @@ Write-Host ""
 Say "  ============================================" 'Green'
 Say "    ✅ 装好了！" 'Green'
 Say "  ============================================" 'Green'
+Write-Host ""
+foreach ($k in $keys) {
+  $n = $Plugins[$k]
+  $b = $before[$k]
+  $a = Get-InstalledVersion $n
+  if (-not $a)       { Say "    ?  $n  （版本读不到）" 'Yellow' }
+  elseif (-not $b)   { Say "    +  已安装    $n   $a" 'Green' }
+  elseif ($b -ne $a) { Say "    ↑  已更新    $n   $b  →  $a" 'Green' }
+  else               { Say "    =  已是最新  $n   $a" 'DarkGray' }
+}
 Write-Host ""
 Say "  接下来两步（第 2 步不能省）："
 Say "    1. 重启 DSH"
