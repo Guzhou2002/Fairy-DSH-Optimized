@@ -162,7 +162,11 @@ if (-not $Yes) {
 
 $code = 1
 try {
-  # 1) 最小 profile：官方 base + web-app，再 insert 选定的插件
+  # 1) 最小 profile：官方 base + web-app。
+  #    [fix] 这里【不再】手写 insert 补丁：每个插件包自带 dsh.bundle.patch，
+  #    下面第 3 步的 `dsh plugin add` 会把包名写进 package.json 的 dsh.profile.bundles，
+  #    loader 会自动展开它。再手写一遍 insert 会撞 duplicate loader entry id: <插件名>，
+  #    隔离实例直接起不来（这正是 v0.3.3 之前本脚本失效的原因）。
   New-Item -ItemType Directory -Force -Path $profileDir | Out-Null
   @'
 {
@@ -173,13 +177,7 @@ try {
 }
 '@ | Set-Content (Join-Path $profileDir 'package.json') -Encoding ascii
   '[]' | Set-Content (Join-Path $profileDir 'cordis.yml') -Encoding ascii
-  $patchLines = @('- insert:')
-  foreach ($key in $Plugins) {
-    $patchLines += '    - id: ' + ($Catalog[$key].name -replace '^dsh-', '')
-    $patchLines += "      name: '$($Catalog[$key].name)'"
-    $patchLines += '      inject: [clientModules]'
-  }
-  $patchLines -join "`r`n" | Set-Content (Join-Path $profileDir 'cordis.patch.yml') -Encoding ascii
+  '[]' | Set-Content (Join-Path $profileDir 'cordis.patch.yml') -Encoding ascii
 
   # 2) 依赖（发布包不带 node_modules，这里按需补齐）
   $needDeps = @($Plugins | Where-Object { -not (Test-Path (Join-Path (Join-Path $root $Catalog[$_].dir) 'node_modules')) })
