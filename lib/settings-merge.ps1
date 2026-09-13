@@ -480,19 +480,20 @@ function New-MergedVisualText {
     }
 
 '@
-  # 顶部声明行：版本号取自 install.ps1，打包时间取包内最新文件时间（每次生成现算）
-  $versionText = ''
-  $installPs1 = Join-Path $Root 'install.ps1'
-  if (Test-Path -LiteralPath $installPs1) {
-    $vm = [regex]::Match([System.IO.File]::ReadAllText($installPs1, $script:MergeUtf8), "\`$Version = '([^']+)'")
-    if ($vm.Success) { $versionText = $vm.Groups[1].Value }
+  # 顶部声明行：版本号取自仓库根的 VERSION 文件，打包时间取包内最新文件时间（每次生成现算）
+  $versionText = 'unknown'
+  $versionFile = Join-Path $Root 'VERSION'
+  if (Test-Path -LiteralPath $versionFile) {
+    $versionText = ([System.IO.File]::ReadAllText($versionFile, $script:MergeUtf8)).Trim()
+  } else {
+    Write-Warning "找不到版本文件：$versionFile（设置页将显示 unknown）"
   }
   $newestFile = Get-ChildItem -LiteralPath $Root -Recurse -File -ErrorAction SilentlyContinue |
     Where-Object { $_.FullName -notmatch '\\node_modules\\|\\release\\|\\snapshots\\' } |
     Sort-Object LastWriteTime -Descending | Select-Object -First 1
   $stampText = 'unknown'
   if ($newestFile) { $stampText = $newestFile.LastWriteTime.ToString('yyyy-MM-dd HH:mm') }
-  $noticeText = '当前版本 v' + $versionText + ' · 最新打包时间 ' + $stampText + ' · 目前仍在 debug 阶段 · 本包为「孤舟蓑笠」基于「橙汁本色」大佬源代码进行的优化分支 · 交流群 1124349108'
+  $noticeText = '当前版本 v' + $versionText + ' · 最新打包时间 ' + $stampText + ' · 本包为「孤舟蓑笠」基于「橙汁本色」开源项目的优化分支 · 交流群 1124349108'
   $panel = $panel.Replace('__FAIRY_NOTICE__', $noticeText)
   $anchor1 = "`t`tfunction Settings({ controller, identitySettings }) {"
   if (([regex]::Matches($text, [regex]::Escape($anchor1))).Count -ne 1) { throw "合并锚点1匹配数不为 1" }
