@@ -1,4 +1,4 @@
-# Fairy-DSH 整理版
+# Fairy-DSH 
 
 **给 DSH 加一只看着您的 Fairy** —— 浮层、HDD 视觉主题、朗读、余额、截图 Dock。
 
