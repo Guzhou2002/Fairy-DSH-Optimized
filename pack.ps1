@@ -6,9 +6,11 @@
 #   .\pack.ps1                     打包全部，输出到 release\
 #   .\pack.ps1 -OutDir D:\out      指定输出目录
 #   .\pack.ps1 -SkipChecks         跳过自检（不推荐）
-#   .\pack.ps1 -ReleaseNames       额外产出一套「不带版本号」的文件名，上传 GitHub Release 用
-#                                  （README 里的 .../latest/download/dsh-fairy-visual.tgz
-#                                    是照字面取文件名的，带版本号则下次发版就会 404）
+#
+# 输出文件名一律【不带版本号】（dsh-fairy-visual.tgz 这种），直接就能上传 GitHub Release ——
+# README / install.cmd 用的是 .../releases/latest/download/dsh-fairy-visual.tgz 这种永久地址，
+# 而 latest/download 的文件名是照字面取的：带版本号则下次发版就 404。
+# 各包的实际版本号会在打包结果表里列出来。
 #
 # 与旧的 build-release.ps1 的区别：
 #   · 不再打 zip，不再预装 node_modules —— 依赖由 pnpm 在安装时自动补齐
@@ -18,6 +20,7 @@
 param(
   [string]$OutDir,
   [switch]$SkipChecks,
+  # 兼容保留：0.3.0 起输出文件名一律不带版本号，此开关已无实际效果
   [switch]$ReleaseNames
 )
 
@@ -83,48 +86,48 @@ $results = @()
 foreach ($key in $Catalog.Keys) {
   $name = $Catalog[$key].name
   $dir  = Join-Path $root $Catalog[$key].dir
-  Write-Host "     pack -> $name" -ForegroundColor DarkGray
+  $ver  = (Get-Content (Join-Path $dir 'package.json') -Raw | ConvertFrom-Json).version
+  Write-Host "     pack -> $name  (v$ver)" -ForegroundColor DarkGray
   Push-Location $dir
   try {
     $out = & pnpm pack --pack-destination $OutDir 2>&1
     if ($LASTEXITCODE -ne 0) { throw "pnpm pack 失败：$name`n$($out -join "`n")" }
   } finally { Pop-Location }
 
-  $tgz = Get-ChildItem $OutDir -Filter "$name-*.tgz" |
+  # pnpm pack 天生产出「包名-版本.tgz」，这里统一定名成【不带版本号】的。
+  # 原因：README / install.cmd 用的是 releases/latest/download/<包名>.tgz 这种永久地址，
+  # 而 latest/download 的文件名是【照字面取】的 —— 带版本号则下次发版就 404。
+  # 定名而不是复制，是为了不在输出目录里留一份内容相同、名字不同的副本（看着乱）。
+  $produced = Get-ChildItem $OutDir -Filter "$name-*.tgz" |
     Sort-Object LastWriteTime -Descending | Select-Object -First 1
-  if (-not $tgz) { throw "未找到产出物：$name" }
+  if (-not $produced) { throw "未找到产出物：$name" }
+  $final = Join-Path $OutDir "$name.tgz"
+  Move-Item -LiteralPath $produced.FullName -Destination $final -Force
 
   # 校验：tgz 里绝不能含 node_modules（那会让包变大且污染分发）
-  $listing = & tar -tzf $tgz.FullName 2>$null
+  $listing = & tar -tzf $final 2>$null
   if ($listing -match '/node_modules/') {
     Err "$name : 产出物里含 node_modules，已删除该文件"
-    Remove-Item $tgz.FullName -Force
+    Remove-Item -LiteralPath $final -Force
     throw "打包结果不干净。"
   }
 
   $results += [PSCustomObject]@{
     '包名'   = $name
-    '文件'   = $tgz.Name
-    '字节'   = $tgz.Length
-    'SHA256' = (Get-FileHash $tgz.FullName -Algorithm SHA256).Hash
+    '版本'   = $ver
+    '文件'   = "$name.tgz"
+    '字节'   = (Get-Item -LiteralPath $final).Length
+    'SHA256' = (Get-FileHash -LiteralPath $final -Algorithm SHA256).Hash
   }
 }
 
-# ---------- 额外产出：上传 GitHub Release 用的一整套 ----------
-if ($ReleaseNames) {
-  Step "生成 Release 用文件名（不带版本号）"
-  foreach ($r in $results) {
-    Copy-Item (Join-Path $OutDir $r.文件) (Join-Path $OutDir "$($r.包名).tgz") -Force
-  }
-  # install.cmd 也一起放进来：群友可能在 Release 页只看到一堆 tgz，不知道怎么办。
-  # 它的永久地址 releases/latest/download/install.cmd 同样不带版本号，可长期引用。
-  $installer = Join-Path $root 'install.cmd'
-  if (Test-Path -LiteralPath $installer) {
-    Copy-Item -LiteralPath $installer -Destination (Join-Path $OutDir 'install.cmd') -Force
-    Ok "已额外生成 $($results.Count) 个不带版本号的副本 + install.cmd"
-  } else {
-    Warn "已生成 $($results.Count) 个不带版本号的副本（未找到 install.cmd，跳过）"
-  }
+# install.cmd 也放进输出目录：群友在 Release 页只会看到一堆 tgz，不知道怎么办。
+# 它的永久地址 releases/latest/download/install.cmd 同样不带版本号，可长期引用。
+$installer = Join-Path $root 'install.cmd'
+if (Test-Path -LiteralPath $installer) {
+  Copy-Item -LiteralPath $installer -Destination (Join-Path $OutDir 'install.cmd') -Force
+} else {
+  Warn "没找到 install.cmd，输出目录里将没有安装器"
 }
 
 # ---------- 汇总 ----------
@@ -137,26 +140,27 @@ $local = ($results | ForEach-Object { Join-Path $OutDir $_.文件 }) -join ' '
 Write-Host ""
 Write-Host "  打包完成" -ForegroundColor Magenta
 Write-Host "  ---------------------------------------------" -ForegroundColor DarkGray
-$results | Select-Object '包名', '文件', '字节' | Format-Table -AutoSize
+# 用 Write-Host 手写表格而不是 Format-Table —— 后者一旦有人把本脚本的输出接进管道
+# （例如 .\pack.ps1 | tee log.txt）就会抛 "FormatEntryData is not valid" 中断。
+Write-Host ("    {0,-20} {1,-8} {2,10}" -f '包名', '版本', '字节') -ForegroundColor DarkGray
+foreach ($r in $results) {
+  Write-Host ("    {0,-20} {1,-8} {2,10}" -f $r.包名, $r.版本, "$([math]::Round($r.字节 / 1KB, 1)) KB") -ForegroundColor Gray
+}
 Ok "合计 $([math]::Round($total / 1KB, 1)) KB"
 Ok "校验值已写入 $sums"
 Write-Host ""
 Write-Host "  本机安装测试：" -ForegroundColor White
 Write-Host "    dsh plugin --profile web add $local" -ForegroundColor DarkGray
 Write-Host ""
-
-if ($ReleaseNames) {
-  Write-Host "  上传 GitHub Release —— 请用这 6 个（都不带版本号）：" -ForegroundColor White
-  Write-Host "    install.cmd          （双击就能装，给看不懂 tgz 的人）" -ForegroundColor DarkGray
-  foreach ($r in $results) { Write-Host "    $($r.包名).tgz" -ForegroundColor DarkGray }
-  Write-Host ""
-  Write-Host "  传完后的永久地址（README 里用的就是这些，把 <用户名>/<仓库> 换掉）：" -ForegroundColor White
-  foreach ($r in $results) {
-    Write-Host "    https://github.com/<用户名>/<仓库>/releases/latest/download/$($r.包名).tgz" -ForegroundColor DarkGray
-  }
-} else {
-  Write-Host "  分发：把这 5 个 .tgz 上传到 GitHub Release。" -ForegroundColor Gray
-  Write-Host "        注意：附件名要去掉版本号，否则 latest/download 下次发版就会 404。" -ForegroundColor Yellow
-  Write-Host "        加 -ReleaseNames 可让本脚本直接产出那套文件名。" -ForegroundColor Yellow
+Write-Host "  上传 GitHub Release —— 就这 6 个文件（都在 $OutDir）：" -ForegroundColor White
+Write-Host "    install.cmd          （双击就能装，给看不懂 tgz 的人）" -ForegroundColor DarkGray
+foreach ($r in $results) { Write-Host "    $($r.文件)" -ForegroundColor DarkGray }
+Write-Host ""
+Write-Host "  传完后的永久地址（README 里用的就是这些，把 <用户名>/<仓库> 换掉）：" -ForegroundColor White
+foreach ($r in $results) {
+  Write-Host "    https://github.com/<用户名>/<仓库>/releases/latest/download/$($r.文件)" -ForegroundColor DarkGray
 }
+Write-Host ""
+Write-Host "  ⚠️ 附件名必须原样用这些（不带版本号）。latest/download 的文件名是照字面取的，" -ForegroundColor Yellow
+Write-Host "     带版本号的话提交当天有效，下次发版就 404。" -ForegroundColor Yellow
 Write-Host ""
