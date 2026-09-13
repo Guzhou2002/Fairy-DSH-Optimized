@@ -24,7 +24,11 @@
 
 
 ### 🟢 完全不懂技术 → 下载、双击
+- 📦 下载哪个？
 
+- **只想装（推荐）**：下 `install.cmd`，双击 —— 自动装 3 个安全插件（视觉浮层 / 朗读 / 余额）
+- **想要全部 5 个**：下 `install_full.cmd`，双击（装前会先把风险讲清楚并要求确认）
+- 不想用安装器：直接下 5 个 `.tgz`，用 `dsh plugin --profile web add <文件路径>` 装
 | 下载这个 | 装什么 | 给谁用 |
 | --- | --- | --- |
 | **[`install.cmd`](https://github.com/Guzhou2002/Fairy-DSH-Optimized/releases/latest/download/install.cmd)** | 3 个：视觉浮层 + 朗读 + 余额 | ✅ **推荐，绝大多数人用这个** |
