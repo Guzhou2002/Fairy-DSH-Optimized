@@ -13,6 +13,17 @@
 
 ## 装起来
 
+### 🤖 让 Agent 帮你装
+
+把下面这段话丢给你的 DSH / Codex Agent：
+
+> 从 https://github.com/Guzhou2002/Fairy-DSH-Optimized 安装 `dsh-fairy-visual` 和
+> `dsh-balance-meter` 到我的 web profile，**不要**装 `dsh-fairy-startup` 和 `dsh-browser-dock`。
+> 装完执行 `dsh --profile web --dump-config` 确认已经挂载。
+
+更完整的说明见 **[AGENTS.md](AGENTS.md)**。
+
+
 ### 🟢 完全不懂技术 → 下载、双击
 
 | 下载这个 | 装什么 | 给谁用 |
@@ -39,15 +50,6 @@ dsh plugin --profile web add `
 > 用的是别的 profile？把 `web` 换成你的 profile 名。
 > 想装某几个而不是全部？把不要的那几行 URL 删掉。
 
-### 🤖 让 Agent 帮你装
-
-把下面这段话丢给你的 DSH / Codex Agent：
-
-> 从 https://github.com/Guzhou2002/Fairy-DSH-Optimized 安装 `dsh-fairy-visual` 和
-> `dsh-balance-meter` 到我的 web profile，**不要**装 `dsh-fairy-startup` 和 `dsh-browser-dock`。
-> 装完执行 `dsh --profile web --dump-config` 确认已经挂载。
-
-更完整的说明见 **[AGENTS.md](AGENTS.md)**。
 
 ---
 
