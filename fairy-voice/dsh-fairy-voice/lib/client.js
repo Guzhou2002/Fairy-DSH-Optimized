@@ -452,13 +452,14 @@ module.exports = { FAIRY_LOG_PREFIX, createFairyDiagnostics };
       for (const child of block.subCalls || []) collectRunningTools(child, activeTools, seenCallIds);
     }
 
-    function readVoiceTimeline(snapshot) {
+    function readVoiceTimeline(snapshot, __fairyChat) {
       const found = [];
       const currentTurnFinals = [];
       const activeAssistantSteps = [];
       const activeTools = [];
       const activeToolIds = new Set();
-      const chat = snapshot?.chat;
+      // [local patch 0.3.1] chat 由 useChat 提供，取不到时回落到旧结构
+      const chat = __fairyChat || snapshot?.chat;
       for (const key of chat?.order || []) {
         const node = chat.nodes?.get(key);
         const data = node?.kind === 'assistant-step' ? node.data : undefined;
@@ -471,7 +472,7 @@ module.exports = { FAIRY_LOG_PREFIX, createFairyDiagnostics };
         // their retained root call. The authoritative live list is merged
         // below from legacy.runningCalls.
       }
-      const userSeq = (snapshot?.chat?.legacy?.nodes || []).filter((node) => node.kind === 'user' || node.kind === 'steering').at(-1)?.seq || 0;
+      const userSeq = (chat?.legacy?.nodes || []).filter((node) => node.kind === 'user' || node.kind === 'steering').at(-1)?.seq || 0;
       // An assistant-step finalNode is the final message for that step, not
       // necessarily the final answer for the whole turn. The official
       // turn-tail projection is the authoritative whole-turn boundary: it is
@@ -504,8 +505,27 @@ module.exports = { FAIRY_LOG_PREFIX, createFairyDiagnostics };
       const sessionKey = snapshot?.sessionId ?? snapshot?.chat?.sessionId ?? snapshot?.chat?.id ?? chat?.order?.[0] ?? 'empty-chat';
       // legacy.runningCalls covers a short interval before a tool row is
       // materialized in chat.order. Merge it by call id without relying on UI text.
-      for (const call of snapshot?.chat?.legacy?.runningCalls || []) {
+      // [local patch 0.3.1] DSH 0.1.2-rc.1 的 chat 不再提供 legacy.runningCalls：
+      // 先走旧来源，取不到再从节点索引里挑仍在 running 的工具节点兜底；两条都空就跳过（不影响朗读）。
+      let __fairyRunningSource = 'none';
+      for (const call of chat?.legacy?.runningCalls || []) {
+        __fairyRunningSource = 'legacy';
         collectRunningTools(call, activeTools, activeToolIds);
+      }
+      if (__fairyRunningSource === 'none') {
+        try {
+          const __fairyIndex = chat?.nodes?.byKey;
+          const __fairyNodes = __fairyIndex instanceof Map ? [...__fairyIndex.values()] : Object.values(__fairyIndex || {});
+          for (const node of __fairyNodes) {
+            const data = node?.data && typeof node.data === 'object' ? node.data : node;
+            const status = data?.status ?? node?.status;
+            if (status !== 'running' || !String(node?.kind || '').includes('tool')) continue;
+            const callId = data?.callId ?? data?.id ?? node?.callId;
+            if (!callId) continue;
+            collectRunningTools({ callId, name: data?.name ?? data?.toolName ?? '', turn: data?.turn, step: data?.step }, activeTools, activeToolIds);
+          }
+          if (activeTools.length) __fairyRunningSource = 'nodes';
+        } catch (error) { /* 兜底失败不影响朗读 */ }
       }
       // snapshot.running can remain true during post-tool reconciliation even
       // after the final assistant node is settled. The concrete live lists
@@ -515,24 +535,30 @@ module.exports = { FAIRY_LOG_PREFIX, createFairyDiagnostics };
       const turn = Math.max(0, ...activeAssistantSteps.map((step) => Number(step.turn) || 0), ...activeTools.map((tool) => Number(tool.turn) || 0));
       // [local patch 0.2.3] 诊断通道：把"消息识别"的实况交给设置栏自检面板。
       // 只写结构信息（字段名与数量），不含任何对话内容；这里出错也不影响朗读。
+      // [local patch 0.3.1] 结构摘要：__fairyShape 定义在模块作用域（见文件末尾的诊断标记处）
       try {
         globalThis.__FAIRY_VOICE_DIAG__ = {
           ...(globalThis.__FAIRY_VOICE_DIAG__ || {}),
           updatedAt: Date.now(),
           timelineRead: true,
+          structure: (() => {
+            try { return String(__fairyShape(snapshot, 2, 40)).slice(0, 2000); } catch (error) { return 'unreadable'; }
+          })(),
           hasSnapshot: Boolean(snapshot),
           snapshotKeys: snapshot && typeof snapshot === 'object' ? Object.keys(snapshot).slice(0, 24) : [],
-          hasChat: Boolean(snapshot && snapshot.chat),
-          chatKeys: snapshot && snapshot.chat && typeof snapshot.chat === 'object' ? Object.keys(snapshot.chat).slice(0, 24) : [],
-          orderLength: Array.isArray(snapshot?.chat?.order) ? snapshot.chat.order.length : -1,
-          nodesKind: snapshot?.chat?.nodes instanceof Map ? 'Map' : typeof snapshot?.chat?.nodes,
-          turnCount: Array.isArray(snapshot?.chat?.timeline?.turnOrder) ? snapshot.chat.timeline.turnOrder.length : -1,
+          hasChat: Boolean(chat),
+          chatSource: __fairyChat ? 'useChat' : 'snapshot.chat',
+          chatKeys: chat && typeof chat === 'object' ? Object.keys(chat).slice(0, 24) : [],
+          orderLength: Array.isArray(chat?.order) ? chat.order.length : -1,
+          nodesKind: chat?.nodes instanceof Map ? 'Map' : typeof chat?.nodes,
+          turnCount: Array.isArray(chat?.timeline?.turnOrder) ? chat.timeline.turnOrder.length : -1,
           finalCount: found.length,
           currentTurnFinalCount: currentTurnFinals.length,
           userSeq,
           sessionKey: String(sessionKey),
           running: activeAssistantSteps.length > 0 || activeTools.length > 0,
           activeTools: activeTools.length,
+          runningSource: __fairyRunningSource,
         };
       } catch (error) { /* 诊断不应影响朗读 */ }
       return {
@@ -1027,8 +1053,24 @@ module.exports = { FAIRY_LOG_PREFIX, createFairyDiagnostics };
       return { state, play, playSystem, stop, primeAudio, setOutputVolume };
     }
 
-    function VoiceController({ useSession, sessionId }) {
-      const snapshot = useSession(readVoiceTimeline);
+    function VoiceController(__fairyProps) {
+      const { useSession, sessionId, useChat } = __fairyProps;
+      // [local patch 0.3.1] DSH 0.1.2-rc.1 起聊天内容不在 useSession 快照里，改由 useChat 提供
+      const __fairyChatValue = typeof useChat === 'function' ? useChat((value) => value) : null;
+      // [local patch 0.3.1] 探针（只写诊断；失败也不影响朗读）
+      try {
+        globalThis.__FAIRY_VOICE_DIAG__ = {
+          ...(globalThis.__FAIRY_VOICE_DIAG__ || {}),
+          vcMounted: true,
+          vcAt: Date.now(),
+          useSessionKind: typeof useSession,
+          vcPropTypes: Object.keys(__fairyProps || {}).slice(0, 40).map((key) => key + ':' + typeof __fairyProps[key]),
+          chatShape: __fairyShape(__fairyChatValue, 2, 40),
+        };
+      } catch (error) { /* 诊断不应影响朗读 */ }
+      // [local patch 0.3.1] 用 useCallback 包一层：chat 变化时选择器重建，自动朗读不会漏消息
+      const __fairyReadTimeline = React.useCallback((value) => readVoiceTimeline(value, __fairyChatValue), [__fairyChatValue]);
+      const snapshot = useSession(__fairyReadTimeline);
       const sessionKey = String(sessionId ?? snapshot.sessionKey ?? 'empty-chat');
       const activeSessions = activeSessionStore || emptyActiveSessionStore;
       const activeSelection = React.useSyncExternalStore(activeSessions.subscribe, activeSessions.getSnapshot, activeSessions.getSnapshot);
@@ -1500,6 +1542,16 @@ module.exports = { FAIRY_LOG_PREFIX, createFairyDiagnostics };
         window.addEventListener(EVENT_STATE, listener);
         return () => window.removeEventListener(EVENT_STATE, listener);
       }, [sessionKey]);
+      // [local patch 0.3.1] 探针：消息动作槽位有没有渲染、有没有拿到消息
+      try {
+        globalThis.__FAIRY_VOICE_DIAG__ = {
+          ...(globalThis.__FAIRY_VOICE_DIAG__ || {}),
+          maMounted: true,
+          maAt: Date.now(),
+          maHasMessage: Boolean(message),
+          maStoreMessages: voiceTimelineStore.getSnapshot().messagesById.size,
+        };
+      } catch (error) { /* 诊断不应影响朗读 */ }
       if (!message) return null;
       const active = state.messageId === String(messageId) && ['preparing', 'briefing', 'brief-fallback', 'loading', 'playing'].includes(state.status);
       const enabled = engine === 'system' || availability.available;
@@ -1530,6 +1582,49 @@ module.exports = { FAIRY_LOG_PREFIX, createFairyDiagnostics };
 
     function apply(ctx) {
       return diagnostics.guard('apply', () => {
+      // [local patch 0.3.1] 探针：插件上下文里有哪些服务
+      try {
+        globalThis.__FAIRY_VOICE_DIAG__ = {
+          ...(globalThis.__FAIRY_VOICE_DIAG__ || {}),
+          ctxKeys: Object.keys(ctx || {}).slice(0, 60),
+          ctxSessionsKind: ctx ? typeof ctx.sessions : 'no-ctx',
+          ctxSessionsKeys: ctx && ctx.sessions && typeof ctx.sessions === 'object' ? Object.keys(ctx.sessions).slice(0, 40) : [],
+        };
+      } catch (error) { /* 诊断不应影响朗读 */ }
+      // [local patch 0.3.1] 语音异常时右下角提示（位置与「预设未启用」提示一致；只在真的读不到消息时出现）
+      try {
+        const __fairyAlertCheck = () => {
+          try {
+            const existing = document.getElementById('dsh-fairy-voice-alert');
+            const current = globalThis.__FAIRY_VOICE_DIAG__ || {};
+            const broken = current.timelineRead === true && current.hasChat !== true;
+            if (!broken) { if (existing) existing.remove(); return; }
+            if (existing) return;
+            if (Date.now() < Number(localStorage.getItem('dsh.fairy.voiceAlertSnooze') || 0)) return;
+            const box = document.createElement('div');
+            box.id = 'dsh-fairy-voice-alert';
+            box.setAttribute('data-dsh-fairy-voice-alert', 'true');
+            box.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:2147483000;max-width:320px;padding:10px 12px;border-radius:10px;font-size:12px;line-height:1.7;background:#c0392b;color:#fff;box-shadow:0 4px 16px rgba(0,0,0,0.3)';
+            const msg = document.createElement('div');
+            msg.textContent = '语音异常：读不到当前会话的消息，朗读会没有内容。请到 设置 → Fairy 最底部「诊断信息」复制内容，发到群里（1124349108）。';
+            const row = document.createElement('div');
+            row.style.cssText = 'display:flex;gap:8px;margin-top:8px;justify-content:flex-end';
+            const later = document.createElement('button');
+            later.type = 'button';
+            later.textContent = '稍后再说';
+            later.onclick = () => { try { localStorage.setItem('dsh.fairy.voiceAlertSnooze', String(Date.now() + 6 * 3600 * 1000)); } catch (error) { /* 存不了就照常显示 */ } box.remove(); };
+            const never = document.createElement('button');
+            never.type = 'button';
+            never.textContent = '不再提示';
+            never.onclick = () => { try { localStorage.setItem('dsh.fairy.voiceAlertSnooze', String(Date.now() + 30 * 24 * 3600 * 1000)); } catch (error) { /* 存不了就照常显示 */ } box.remove(); };
+            row.append(later, never);
+            box.append(msg, row);
+            document.body.appendChild(box);
+          } catch (error) { /* 提示失败不影响朗读 */ }
+        };
+        setTimeout(__fairyAlertCheck, 8000);
+        setInterval(__fairyAlertCheck, 15000);
+      } catch (error) { /* 提示失败不影响朗读 */ }
       ensureVoiceControlStyles();
       const activeSessions = createActiveSessionStore(ctx.sessions);
       activeSessionStore = activeSessions;
@@ -1550,6 +1645,19 @@ module.exports = { FAIRY_LOG_PREFIX, createFairyDiagnostics };
       }, { surface: 'client' });
     }
 
+    // [local patch 0.3.1] 结构摘要工具（模块作用域）：只输出「字段名 + 类型」，最多两层，不含任何取值
+    const __fairyShape = (value, depth, maxKeys) => {
+      try {
+        if (value === null) return 'null';
+        if (typeof value !== 'object') return typeof value;
+        if (Array.isArray(value)) return 'Array(' + value.length + ')';
+        if (value instanceof Map) return 'Map(' + value.size + ')';
+        if (value instanceof Set) return 'Set(' + value.size + ')';
+        const keys = Object.keys(value);
+        if (depth <= 0) return 'object(' + keys.length + ')';
+        return '{' + keys.slice(0, maxKeys).map((key) => key + ':' + __fairyShape(value[key], depth - 1, 4)).join(', ') + '}';
+      } catch (error) { return 'unreadable'; }
+    };
     // [local patch 0.2.3] 客户端已加载标记（自检面板据此判断朗读控件是否挂上）
     try {
       globalThis.__FAIRY_VOICE_DIAG__ = { ...(globalThis.__FAIRY_VOICE_DIAG__ || {}), mounted: true, mountedAt: Date.now() };

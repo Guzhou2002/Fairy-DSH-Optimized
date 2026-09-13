@@ -224,6 +224,40 @@ DSH 升级后若界面元素变化，插件会**静默降级**（有 capability 
 - `dsh-fairy-contracts` 的源码**内联进各包的 `vendor/`**，依赖里移除 —— 于是每个包都能独立分发
 - 依赖改为 **hoisted 扁平布局**，包内 `node_modules` 零符号链接
 
+### 消息识别适配：DSH 0.1.2-rc.1（0.3.1）
+
+**症状**：设置 → Fairy 自检第 7 项「消息识别」永远 ❌；`useSession` 快照里根本没有 `chat`。
+
+**根因**：DSH `0.1.2-rc.1` 把聊天内容从 `useSession` 快照中拆了出去。
+会话槽位（`conversation.input.left`）另外提供了 `useChat` / `useConversation` / `useProjection` /
+`useTrajectory` 等 hook，其中 **`useChat` 返回的正是旧的 `chat` 结构**
+（`order` / `nodes` / `timeline.turnOrder` / `timeline.turns` / `legacy.nodes`）。
+
+**改法**（只动「读消息的适配层」，朗读、合成、播放逻辑一行未改）：
+
+- `VoiceController` 增加 `const __fairyChatValue = useChat((value) => value);`
+- 选择器改为 `useSession(React.useCallback((v) => readVoiceTimeline(v, __fairyChatValue), [__fairyChatValue]))`
+- `readVoiceTimeline(snapshot, __fairyChat)` 新增第二入参：`const chat = __fairyChat || snapshot?.chat;`
+  —— 取不到时回落到旧结构，**兼容旧版 DSH**
+- 其余 `snapshot?.chat?.legacy?.*` 改读 `chat?.legacy?.*`
+- **`runningCalls` 兼容**：新结构的 `legacy` **不再提供 `runningCalls`**（原来用来判断"正在跑工具"）。
+  现在改为**双来源**：先走 `legacy.runningCalls`，取不到就从 `chat.nodes.byKey` 里挑
+  `status === 'running'` 且 kind 含 `tool` 的节点兜底；两条都空就跳过。
+  诊断里的 `runningSource` 会告诉你这次用的是哪条：`legacy` / `nodes` / `none`
+  —— 若长时间是 `none`，说明兜底没命中，需要换数据源（见 `docs\接手-2026-09-13.md`）
+
+### 诊断信息与异常提示（0.3.1）
+
+- `fairy-voice` 的诊断通道新增 `structure` 字段：只输出**字段名 + 类型**（最多两层），
+  仍然**不含任何字段取值 / 对话内容**；同时上报会话槽位 props、`ctx` 服务名与 `useChat` 的结构
+- 设置 → Fairy 面板**最底部**统一为「**诊断信息（排查用）**」一栏（文本框**收窄到 380px**）：
+  上面是结构摘要，点「复制诊断信息」后下面出现完整诊断文本
+- **右下角异常提示**：检测到「读不到会话消息」（即本次修的这个故障再度发生）时，
+  会出现右下角红色提示框（与「预设未启用」提示同位置），带「稍后再说（静默 6 小时）」
+  「不再提示（30 天）」；正常时**不出现**
+- 判定条件是 `timelineRead === true && hasChat !== true`，因此**不会**因为用户没装 SoVITS、
+  或主动关掉 HDD 视觉模式而弹窗
+
 ### 朗读自检 + 地址/参考音频可配置（0.2.3）
 
 - 宿主新增 `GET /fairy-voice/selfcheck`、`GET|POST /fairy-voice/config`

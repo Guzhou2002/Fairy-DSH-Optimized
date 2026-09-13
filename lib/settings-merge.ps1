@@ -133,7 +133,7 @@ function New-MergedVisualText {
           } else if (diag.hasChat !== true) {
             list.push({
               id: 'message', title: '消息识别（能不能读到要朗读的内容）', level: 'fail',
-              detail: `插件读不到会话的消息结构——这属于插件和当前 DSH 版本的适配问题，不是操作失误。技术细节：快照字段=[${(diag.snapshotKeys || []).join(', ')}]，chat 字段=[${(diag.chatKeys || []).join(', ')}]。`,
+              detail: `插件读不到会话的消息结构——这属于插件和当前 DSH 版本的适配问题，不是操作失误。技术细节：快照字段=[${(diag.snapshotKeys || []).join(', ')}]，chat 字段=[${(diag.chatKeys || []).join(', ')}]。本页最底部「结构摘要」里有完整的字段清单。`,
               fix: '这一项只能由插件作者修。请点「复制诊断信息」把结果发到群里（群号 1124349108），作者据此适配。'
             });
           } else if ((diag.finalCount || 0) === 0) {
@@ -343,6 +343,30 @@ function New-MergedVisualText {
           }) : null
         ]
       });
+      // [local patch 0.3.1] 结构摘要文本：供面板底部显示（每次 tick 重算，只有字段名和类型）
+      const shapeText = (() => {
+        try {
+          const current = (typeof window !== 'undefined' && window.__FAIRY_VOICE_DIAG__) || null;
+          if (!current) return '（页面里没有 __FAIRY_VOICE_DIAG__：客户端脚本没跑到）';
+          const lines = [];
+          if (current.structure) lines.push('结构：' + String(current.structure));
+          if (current.chatShape && current.chatShape !== '（未调用）') lines.push('useChat 结构：' + String(current.chatShape));
+          if (Array.isArray(current.vcPropTypes) && current.vcPropTypes.length) lines.push('会话槽位 props：' + current.vcPropTypes.join(', '));
+          if (Array.isArray(current.propTypes) && current.propTypes.length) lines.push('回复槽位 props：' + current.propTypes.join(', '));
+          if (current.ctxSessionsKind) lines.push('ctx.sessions 类型：' + current.ctxSessionsKind);
+          if (Array.isArray(current.ctxKeys) && current.ctxKeys.length) lines.push('插件 ctx：' + current.ctxKeys.join(', '));
+          if (Array.isArray(current.ctxSessionsKeys) && current.ctxSessionsKeys.length) lines.push('ctx.sessions：' + current.ctxSessionsKeys.join(', '));
+          if (!lines.length) {
+            return '（还没有数据）探针：' + JSON.stringify({
+              vcMounted: current.vcMounted === true,
+              useSessionKind: current.useSessionKind || '（未上报）',
+              maMounted: current.maMounted === true,
+              maStoreMessages: typeof current.maStoreMessages === 'number' ? current.maStoreMessages : -1
+            });
+          }
+          return lines.join('\n');
+        } catch (error) { return '（读取失败）'; }
+      })();
       return jsxs('div', {
         className: 'dsh-fairy-voice-panel',
         'data-dsh-fairy-voice-panel': 'true',
@@ -425,10 +449,6 @@ function New-MergedVisualText {
             style: { fontSize: '12px', lineHeight: 1.7, opacity: 0.7 },
             children: '提示：自动朗读开关和每条回复下方的朗读按钮，只会在真正的会话页面里出现；首页和刚新建的空白会话页不会显示，这是 DSH 本身的设计，不是插件坏了。'
           }),
-          diagText ? jsx('textarea', {
-            readOnly: true, value: diagText, rows: 8,
-            style: { ...inputStyle, height: 'auto', padding: '8px 10px', whiteSpace: 'pre' }
-          }) : null,
           jsx('h3', { style: { margin: '6px 0 0', fontSize: '14px' }, children: '朗读服务设置' }),
           jsx('div', { style: { fontSize: '12px', lineHeight: 1.7, opacity: 0.7 }, children: '默认连接本机的 GPT-SoVITS（http://127.0.0.1:9880）。如果你把它跑在别的端口或另一台电脑上，改下面第一栏即可；跑到别的电脑时，对方要监听 0.0.0.0 并在防火墙放行该端口。' }),
           jsx('label', { style: { display: 'grid', gap: '4px', fontSize: '12px' }, children: [
@@ -474,7 +494,24 @@ function New-MergedVisualText {
           jsxs('div', { style: { display: 'flex', gap: '8px' }, children: [
             jsx('button', { type: 'button', disabled: busy || !apiKey.trim(), onClick: () => postConfig({ apiKey: apiKey.trim() }), children: '保存' }),
             brain.configured ? jsx('button', { type: 'button', disabled: busy, onClick: () => postConfig({ clear: true }), children: '移除密钥' }) : null
-          ] })
+          ] }),
+          // [local patch 0.3.1] 面板最底部：诊断信息（结构摘要只有字段名与类型，不含任何对话内容）
+          jsx('h3', { style: { margin: '6px 0 0', fontSize: '14px' }, children: '诊断信息（排查用）' }),
+          jsx('div', {
+            style: { fontSize: '12px', lineHeight: 1.7, opacity: 0.7, maxWidth: '380px' },
+            children: '语音出问题时：点上面的「复制诊断信息」，再点下面这个框全选复制，两条一起发到群里（1124349108）。两个框里都没有聊天内容；诊断信息里带本机路径和自检结果，不想公开可以自行删掉。'
+          }),
+          jsx('div', { style: { fontSize: '11px', opacity: 0.6 }, children: '结构摘要（只有字段名与类型，不含任何取值）' }),
+          jsx('textarea', {
+            readOnly: true, value: shapeText, rows: 6,
+            'data-dsh-fairy-shape': 'true',
+            style: { ...inputStyle, width: '100%', maxWidth: '380px', height: 'auto', padding: '8px 10px', whiteSpace: 'pre', wordBreak: 'break-all', fontSize: '11px', opacity: 0.85 }
+          }),
+          diagText ? jsx('div', { style: { fontSize: '11px', opacity: 0.6 }, children: '诊断信息（点了「复制诊断信息」后出现在这里）' }) : null,
+          diagText ? jsx('textarea', {
+            readOnly: true, value: diagText, rows: 6,
+            style: { ...inputStyle, width: '100%', maxWidth: '380px', height: 'auto', padding: '8px 10px', whiteSpace: 'pre', fontSize: '11px', opacity: 0.85 }
+          }) : null
         ]
       });
     }
@@ -529,24 +566,30 @@ function New-MergedVoiceText {
   $diagCode = @'
       // [local patch 0.2.3] 诊断通道：把"消息识别"的实况交给设置栏自检面板。
       // 只写结构信息（字段名与数量），不含任何对话内容；这里出错也不影响朗读。
+      // [local patch 0.3.1] 结构摘要：__fairyShape 定义在模块作用域（见文件末尾的诊断标记处）
       try {
         globalThis.__FAIRY_VOICE_DIAG__ = {
           ...(globalThis.__FAIRY_VOICE_DIAG__ || {}),
           updatedAt: Date.now(),
           timelineRead: true,
+          structure: (() => {
+            try { return String(__fairyShape(snapshot, 2, 40)).slice(0, 2000); } catch (error) { return 'unreadable'; }
+          })(),
           hasSnapshot: Boolean(snapshot),
           snapshotKeys: snapshot && typeof snapshot === 'object' ? Object.keys(snapshot).slice(0, 24) : [],
-          hasChat: Boolean(snapshot && snapshot.chat),
-          chatKeys: snapshot && snapshot.chat && typeof snapshot.chat === 'object' ? Object.keys(snapshot.chat).slice(0, 24) : [],
-          orderLength: Array.isArray(snapshot?.chat?.order) ? snapshot.chat.order.length : -1,
-          nodesKind: snapshot?.chat?.nodes instanceof Map ? 'Map' : typeof snapshot?.chat?.nodes,
-          turnCount: Array.isArray(snapshot?.chat?.timeline?.turnOrder) ? snapshot.chat.timeline.turnOrder.length : -1,
+          hasChat: Boolean(chat),
+          chatSource: __fairyChat ? 'useChat' : 'snapshot.chat',
+          chatKeys: chat && typeof chat === 'object' ? Object.keys(chat).slice(0, 24) : [],
+          orderLength: Array.isArray(chat?.order) ? chat.order.length : -1,
+          nodesKind: chat?.nodes instanceof Map ? 'Map' : typeof chat?.nodes,
+          turnCount: Array.isArray(chat?.timeline?.turnOrder) ? chat.timeline.turnOrder.length : -1,
           finalCount: found.length,
           currentTurnFinalCount: currentTurnFinals.length,
           userSeq,
           sessionKey: String(sessionKey),
           running: activeAssistantSteps.length > 0 || activeTools.length > 0,
           activeTools: activeTools.length,
+          runningSource: __fairyRunningSource,
         };
       } catch (error) { /* 诊断不应影响朗读 */ }
       return {
@@ -555,10 +598,166 @@ function New-MergedVoiceText {
 '@
   $text = $text.Replace($diagAnchor, $diagCode)
 
+  # [local patch 0.3.1] 探针 A：控制器到底有没有渲染、DSH 还提不提供 useSession
+  $vcAnchor = "    function VoiceController({ useSession, sessionId }) {"
+  if (([regex]::Matches($text, [regex]::Escape($vcAnchor))).Count -ne 1) { throw "控制器探针锚点匹配数不为 1（settings-merge 需要维护）" }
+  $vcCode = @'
+    function VoiceController(__fairyProps) {
+      const { useSession, sessionId, useChat } = __fairyProps;
+      // [local patch 0.3.1] DSH 0.1.2-rc.1 起聊天内容不在 useSession 快照里，改由 useChat 提供
+      const __fairyChatValue = typeof useChat === 'function' ? useChat((value) => value) : null;
+      // [local patch 0.3.1] 探针（只写诊断；失败也不影响朗读）
+      try {
+        globalThis.__FAIRY_VOICE_DIAG__ = {
+          ...(globalThis.__FAIRY_VOICE_DIAG__ || {}),
+          vcMounted: true,
+          vcAt: Date.now(),
+          useSessionKind: typeof useSession,
+          vcPropTypes: Object.keys(__fairyProps || {}).slice(0, 40).map((key) => key + ':' + typeof __fairyProps[key]),
+          chatShape: __fairyShape(__fairyChatValue, 2, 40),
+        };
+      } catch (error) { /* 诊断不应影响朗读 */ }
+'@
+  $text = $text.Replace($vcAnchor, $vcCode)
+
+  # [local patch 0.3.1] 探针 B：每条回复的朗读按钮槽位有没有渲染、有没有拿到消息
+  $maAnchor = "      if (!message) return null;"
+  if (([regex]::Matches($text, [regex]::Escape($maAnchor))).Count -ne 1) { throw "消息动作探针锚点匹配数不为 1（settings-merge 需要维护）" }
+  $maCode = @'
+      // [local patch 0.3.1] 探针：消息动作槽位有没有渲染、有没有拿到消息
+      try {
+        globalThis.__FAIRY_VOICE_DIAG__ = {
+          ...(globalThis.__FAIRY_VOICE_DIAG__ || {}),
+          maMounted: true,
+          maAt: Date.now(),
+          maHasMessage: Boolean(message),
+          maStoreMessages: voiceTimelineStore.getSnapshot().messagesById.size,
+        };
+      } catch (error) { /* 诊断不应影响朗读 */ }
+      if (!message) return null;
+'@
+  $text = $text.Replace($maAnchor, $maCode)
+
+  # [local patch 0.3.1] 探针 C：插件上下文里有哪些服务（找消息真正的入口）
+  $ctxAnchor = "      return diagnostics.guard('apply', () => {`n      ensureVoiceControlStyles();"
+  if (([regex]::Matches($text, [regex]::Escape($ctxAnchor))).Count -ne 1) { throw "上下文探针锚点匹配数不为 1（settings-merge 需要维护）" }
+  $ctxCode = @'
+      return diagnostics.guard('apply', () => {
+      // [local patch 0.3.1] 探针：插件上下文里有哪些服务
+      try {
+        globalThis.__FAIRY_VOICE_DIAG__ = {
+          ...(globalThis.__FAIRY_VOICE_DIAG__ || {}),
+          ctxKeys: Object.keys(ctx || {}).slice(0, 60),
+          ctxSessionsKind: ctx ? typeof ctx.sessions : 'no-ctx',
+          ctxSessionsKeys: ctx && ctx.sessions && typeof ctx.sessions === 'object' ? Object.keys(ctx.sessions).slice(0, 40) : [],
+        };
+      } catch (error) { /* 诊断不应影响朗读 */ }
+      // [local patch 0.3.1] 语音异常时右下角提示（位置与「预设未启用」提示一致；只在真的读不到消息时出现）
+      try {
+        const __fairyAlertCheck = () => {
+          try {
+            const existing = document.getElementById('dsh-fairy-voice-alert');
+            const current = globalThis.__FAIRY_VOICE_DIAG__ || {};
+            const broken = current.timelineRead === true && current.hasChat !== true;
+            if (!broken) { if (existing) existing.remove(); return; }
+            if (existing) return;
+            if (Date.now() < Number(localStorage.getItem('dsh.fairy.voiceAlertSnooze') || 0)) return;
+            const box = document.createElement('div');
+            box.id = 'dsh-fairy-voice-alert';
+            box.setAttribute('data-dsh-fairy-voice-alert', 'true');
+            box.style.cssText = 'position:fixed;right:16px;bottom:16px;z-index:2147483000;max-width:320px;padding:10px 12px;border-radius:10px;font-size:12px;line-height:1.7;background:#c0392b;color:#fff;box-shadow:0 4px 16px rgba(0,0,0,0.3)';
+            const msg = document.createElement('div');
+            msg.textContent = '语音异常：读不到当前会话的消息，朗读会没有内容。请到 设置 → Fairy 最底部「诊断信息」复制内容，发到群里（1124349108）。';
+            const row = document.createElement('div');
+            row.style.cssText = 'display:flex;gap:8px;margin-top:8px;justify-content:flex-end';
+            const later = document.createElement('button');
+            later.type = 'button';
+            later.textContent = '稍后再说';
+            later.onclick = () => { try { localStorage.setItem('dsh.fairy.voiceAlertSnooze', String(Date.now() + 6 * 3600 * 1000)); } catch (error) { /* 存不了就照常显示 */ } box.remove(); };
+            const never = document.createElement('button');
+            never.type = 'button';
+            never.textContent = '不再提示';
+            never.onclick = () => { try { localStorage.setItem('dsh.fairy.voiceAlertSnooze', String(Date.now() + 30 * 24 * 3600 * 1000)); } catch (error) { /* 存不了就照常显示 */ } box.remove(); };
+            row.append(later, never);
+            box.append(msg, row);
+            document.body.appendChild(box);
+          } catch (error) { /* 提示失败不影响朗读 */ }
+        };
+        setTimeout(__fairyAlertCheck, 8000);
+        setInterval(__fairyAlertCheck, 15000);
+      } catch (error) { /* 提示失败不影响朗读 */ }
+      ensureVoiceControlStyles();
+'@
+  $text = $text.Replace($ctxAnchor, $ctxCode)
+
+  # [local patch 0.3.1] 适配层：DSH 换了数据源，把 useChat 读到的 chat 喂给读消息函数
+  $useSessionAnchor = "      const snapshot = useSession(readVoiceTimeline);"
+  if (([regex]::Matches($text, [regex]::Escape($useSessionAnchor))).Count -ne 1) { throw "useSession 接线锚点匹配数不为 1（settings-merge 需要维护）" }
+  $useSessionCode = @'
+      // [local patch 0.3.1] 用 useCallback 包一层：chat 变化时选择器重建，自动朗读不会漏消息
+      const __fairyReadTimeline = React.useCallback((value) => readVoiceTimeline(value, __fairyChatValue), [__fairyChatValue]);
+      const snapshot = useSession(__fairyReadTimeline);
+'@
+  $text = $text.Replace($useSessionAnchor, $useSessionCode)
+
+  # [local patch 0.3.1] readVoiceTimeline 新增 chat 入参；取不到时回落到旧的 snapshot.chat（兼容旧版 DSH）
+  $timelineAnchors = @(
+    @{ Old = "    function readVoiceTimeline(snapshot) {"; New = "    function readVoiceTimeline(snapshot, __fairyChat) {" },
+    @{ Old = "      const chat = snapshot?.chat;"; New = "      // [local patch 0.3.1] chat 由 useChat 提供，取不到时回落到旧结构`n      const chat = __fairyChat || snapshot?.chat;" },
+    @{ Old = "      const userSeq = (snapshot?.chat?.legacy?.nodes || [])"; New = "      const userSeq = (chat?.legacy?.nodes || [])" },
+    @{ Old = "      for (const call of snapshot?.chat?.legacy?.runningCalls || []) {"; New = "      for (const call of chat?.legacy?.runningCalls || []) {" }
+  )
+  foreach ($item in $timelineAnchors) {
+    if (([regex]::Matches($text, [regex]::Escape($item.Old))).Count -ne 1) { throw "读消息适配锚点匹配数不为 1：$($item.Old)" }
+    $text = $text.Replace($item.Old, $item.New)
+  }
+
+  # [local patch 0.3.1] runningCalls 兼容：新 chat 不再有 legacy.runningCalls，改用节点索引兜底
+  $runningAnchor = "      for (const call of chat?.legacy?.runningCalls || []) {`n        collectRunningTools(call, activeTools, activeToolIds);`n      }"
+  if (([regex]::Matches($text, [regex]::Escape($runningAnchor))).Count -ne 1) { throw "运行中工具兜底锚点匹配数不为 1（settings-merge 需要维护）" }
+  $runningCode = @'
+      // [local patch 0.3.1] DSH 0.1.2-rc.1 的 chat 不再提供 legacy.runningCalls：
+      // 先走旧来源，取不到再从节点索引里挑仍在 running 的工具节点兜底；两条都空就跳过（不影响朗读）。
+      let __fairyRunningSource = 'none';
+      for (const call of chat?.legacy?.runningCalls || []) {
+        __fairyRunningSource = 'legacy';
+        collectRunningTools(call, activeTools, activeToolIds);
+      }
+      if (__fairyRunningSource === 'none') {
+        try {
+          const __fairyIndex = chat?.nodes?.byKey;
+          const __fairyNodes = __fairyIndex instanceof Map ? [...__fairyIndex.values()] : Object.values(__fairyIndex || {});
+          for (const node of __fairyNodes) {
+            const data = node?.data && typeof node.data === 'object' ? node.data : node;
+            const status = data?.status ?? node?.status;
+            if (status !== 'running' || !String(node?.kind || '').includes('tool')) continue;
+            const callId = data?.callId ?? data?.id ?? node?.callId;
+            if (!callId) continue;
+            collectRunningTools({ callId, name: data?.name ?? data?.toolName ?? '', turn: data?.turn, step: data?.step }, activeTools, activeToolIds);
+          }
+          if (activeTools.length) __fairyRunningSource = 'nodes';
+        } catch (error) { /* 兜底失败不影响朗读 */ }
+      }
+'@
+  $text = $text.Replace($runningAnchor, $runningCode)
+
   # 标记客户端已加载，供自检面板区分"控件没挂上"和"挂上了但没数据"
   $mountedAnchor = "    return { apply, inject: ['slots', 'sessions'] };"
   if (([regex]::Matches($text, [regex]::Escape($mountedAnchor))).Count -ne 1) { throw "挂载标记锚点匹配数不为 1（settings-merge 需要维护）" }
   $mountedCode = @'
+    // [local patch 0.3.1] 结构摘要工具（模块作用域）：只输出「字段名 + 类型」，最多两层，不含任何取值
+    const __fairyShape = (value, depth, maxKeys) => {
+      try {
+        if (value === null) return 'null';
+        if (typeof value !== 'object') return typeof value;
+        if (Array.isArray(value)) return 'Array(' + value.length + ')';
+        if (value instanceof Map) return 'Map(' + value.size + ')';
+        if (value instanceof Set) return 'Set(' + value.size + ')';
+        const keys = Object.keys(value);
+        if (depth <= 0) return 'object(' + keys.length + ')';
+        return '{' + keys.slice(0, maxKeys).map((key) => key + ':' + __fairyShape(value[key], depth - 1, 4)).join(', ') + '}';
+      } catch (error) { return 'unreadable'; }
+    };
     // [local patch 0.2.3] 客户端已加载标记（自检面板据此判断朗读控件是否挂上）
     try {
       globalThis.__FAIRY_VOICE_DIAG__ = { ...(globalThis.__FAIRY_VOICE_DIAG__ || {}), mounted: true, mountedAt: Date.now() };

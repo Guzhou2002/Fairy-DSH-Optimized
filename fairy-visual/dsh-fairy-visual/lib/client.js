@@ -7710,7 +7710,7 @@ html[data-dsh-fairy-visual][data-dsh-fairy-theme="light"] [data-dsh-fairy-mascot
         className: 'dsh-fairy-notice',
         'data-dsh-fairy-notice': 'true',
         style: { fontSize: '11px', lineHeight: 1.6, opacity: 0.55, marginBottom: '12px' },
-        children: '当前版本 v0.3.0 · 最新打包时间 2026-09-13 15:34 · 本包为「孤舟蓑笠」基于「橙汁本色」开源项目的优化分支 · 交流群 1124349108'
+        children: '当前版本 v0.3.1 · 最新打包时间 2026-09-13 22:29 · 本包为「孤舟蓑笠」基于「橙汁本色」开源项目的优化分支 · 交流群 1124349108'
       });
     }
     // [local patch 0.2.3] 自检面板：面向完全不懂技术的使用者，每一项都给"怎么修"
@@ -7804,7 +7804,7 @@ html[data-dsh-fairy-visual][data-dsh-fairy-theme="light"] [data-dsh-fairy-mascot
           } else if (diag.hasChat !== true) {
             list.push({
               id: 'message', title: '消息识别（能不能读到要朗读的内容）', level: 'fail',
-              detail: `插件读不到会话的消息结构——这属于插件和当前 DSH 版本的适配问题，不是操作失误。技术细节：快照字段=[${(diag.snapshotKeys || []).join(', ')}]，chat 字段=[${(diag.chatKeys || []).join(', ')}]。`,
+              detail: `插件读不到会话的消息结构——这属于插件和当前 DSH 版本的适配问题，不是操作失误。技术细节：快照字段=[${(diag.snapshotKeys || []).join(', ')}]，chat 字段=[${(diag.chatKeys || []).join(', ')}]。本页最底部「结构摘要」里有完整的字段清单。`,
               fix: '这一项只能由插件作者修。请点「复制诊断信息」把结果发到群里（群号 1124349108），作者据此适配。'
             });
           } else if ((diag.finalCount || 0) === 0) {
@@ -8014,6 +8014,30 @@ html[data-dsh-fairy-visual][data-dsh-fairy-theme="light"] [data-dsh-fairy-mascot
           }) : null
         ]
       });
+      // [local patch 0.3.1] 结构摘要文本：供面板底部显示（每次 tick 重算，只有字段名和类型）
+      const shapeText = (() => {
+        try {
+          const current = (typeof window !== 'undefined' && window.__FAIRY_VOICE_DIAG__) || null;
+          if (!current) return '（页面里没有 __FAIRY_VOICE_DIAG__：客户端脚本没跑到）';
+          const lines = [];
+          if (current.structure) lines.push('结构：' + String(current.structure));
+          if (current.chatShape && current.chatShape !== '（未调用）') lines.push('useChat 结构：' + String(current.chatShape));
+          if (Array.isArray(current.vcPropTypes) && current.vcPropTypes.length) lines.push('会话槽位 props：' + current.vcPropTypes.join(', '));
+          if (Array.isArray(current.propTypes) && current.propTypes.length) lines.push('回复槽位 props：' + current.propTypes.join(', '));
+          if (current.ctxSessionsKind) lines.push('ctx.sessions 类型：' + current.ctxSessionsKind);
+          if (Array.isArray(current.ctxKeys) && current.ctxKeys.length) lines.push('插件 ctx：' + current.ctxKeys.join(', '));
+          if (Array.isArray(current.ctxSessionsKeys) && current.ctxSessionsKeys.length) lines.push('ctx.sessions：' + current.ctxSessionsKeys.join(', '));
+          if (!lines.length) {
+            return '（还没有数据）探针：' + JSON.stringify({
+              vcMounted: current.vcMounted === true,
+              useSessionKind: current.useSessionKind || '（未上报）',
+              maMounted: current.maMounted === true,
+              maStoreMessages: typeof current.maStoreMessages === 'number' ? current.maStoreMessages : -1
+            });
+          }
+          return lines.join('\n');
+        } catch (error) { return '（读取失败）'; }
+      })();
       return jsxs('div', {
         className: 'dsh-fairy-voice-panel',
         'data-dsh-fairy-voice-panel': 'true',
@@ -8096,10 +8120,6 @@ html[data-dsh-fairy-visual][data-dsh-fairy-theme="light"] [data-dsh-fairy-mascot
             style: { fontSize: '12px', lineHeight: 1.7, opacity: 0.7 },
             children: '提示：自动朗读开关和每条回复下方的朗读按钮，只会在真正的会话页面里出现；首页和刚新建的空白会话页不会显示，这是 DSH 本身的设计，不是插件坏了。'
           }),
-          diagText ? jsx('textarea', {
-            readOnly: true, value: diagText, rows: 8,
-            style: { ...inputStyle, height: 'auto', padding: '8px 10px', whiteSpace: 'pre' }
-          }) : null,
           jsx('h3', { style: { margin: '6px 0 0', fontSize: '14px' }, children: '朗读服务设置' }),
           jsx('div', { style: { fontSize: '12px', lineHeight: 1.7, opacity: 0.7 }, children: '默认连接本机的 GPT-SoVITS（http://127.0.0.1:9880）。如果你把它跑在别的端口或另一台电脑上，改下面第一栏即可；跑到别的电脑时，对方要监听 0.0.0.0 并在防火墙放行该端口。' }),
           jsx('label', { style: { display: 'grid', gap: '4px', fontSize: '12px' }, children: [
@@ -8145,7 +8165,24 @@ html[data-dsh-fairy-visual][data-dsh-fairy-theme="light"] [data-dsh-fairy-mascot
           jsxs('div', { style: { display: 'flex', gap: '8px' }, children: [
             jsx('button', { type: 'button', disabled: busy || !apiKey.trim(), onClick: () => postConfig({ apiKey: apiKey.trim() }), children: '保存' }),
             brain.configured ? jsx('button', { type: 'button', disabled: busy, onClick: () => postConfig({ clear: true }), children: '移除密钥' }) : null
-          ] })
+          ] }),
+          // [local patch 0.3.1] 面板最底部：诊断信息（结构摘要只有字段名与类型，不含任何对话内容）
+          jsx('h3', { style: { margin: '6px 0 0', fontSize: '14px' }, children: '诊断信息（排查用）' }),
+          jsx('div', {
+            style: { fontSize: '12px', lineHeight: 1.7, opacity: 0.7, maxWidth: '380px' },
+            children: '语音出问题时：点上面的「复制诊断信息」，再点下面这个框全选复制，两条一起发到群里（1124349108）。两个框里都没有聊天内容；诊断信息里带本机路径和自检结果，不想公开可以自行删掉。'
+          }),
+          jsx('div', { style: { fontSize: '11px', opacity: 0.6 }, children: '结构摘要（只有字段名与类型，不含任何取值）' }),
+          jsx('textarea', {
+            readOnly: true, value: shapeText, rows: 6,
+            'data-dsh-fairy-shape': 'true',
+            style: { ...inputStyle, width: '100%', maxWidth: '380px', height: 'auto', padding: '8px 10px', whiteSpace: 'pre', wordBreak: 'break-all', fontSize: '11px', opacity: 0.85 }
+          }),
+          diagText ? jsx('div', { style: { fontSize: '11px', opacity: 0.6 }, children: '诊断信息（点了「复制诊断信息」后出现在这里）' }) : null,
+          diagText ? jsx('textarea', {
+            readOnly: true, value: diagText, rows: 6,
+            style: { ...inputStyle, width: '100%', maxWidth: '380px', height: 'auto', padding: '8px 10px', whiteSpace: 'pre', fontSize: '11px', opacity: 0.85 }
+          }) : null
         ]
       });
     }
