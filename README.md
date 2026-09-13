@@ -15,7 +15,7 @@
 
 ### 🟢 完全不懂技术 → 看这条
 
-**(如果还没安装DSH)点这里下载我写的一键部署DSH+托盘守护脚本** 👉 [`dsh-tray-supervisor`](https://github.com/Guzhou2002/dsh-tray-supervisor)
+
 **点这里直接下载安装器** 👉 [`install.cmd`](https://github.com/Guzhou2002/Fairy-DSH-Optimized/releases/latest/download/install.cmd)
 
 下载完 **双击它**，按屏幕上的中文提示走就行。
