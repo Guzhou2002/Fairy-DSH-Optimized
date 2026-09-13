@@ -1,3 +1,125 @@
+# Fairy-DSH 整理版
+
+**给 DSH 加一只住在界面里的 Fairy** —— 宠物浮层、HDD 视觉主题、朗读、余额、截图 Dock。
+
+> ⚠️ **这是非官方整理分支。**
+> 基于 [橙汁本色](https://github.com/Chengzhibense/Fairy-DSH) 的 **Fairy-DSH** 源代码整理而成，
+> 上游原创代码按 **Apache-2.0** 发布。本分支只做**安装分发**和少量本地增强。
+>
+> **有问题请提到[本仓库 Issues](https://github.com/Guzhou2002/Fairy-DSH-Optimized/issues)
+> 或交流群 `1124349108`，请不要打扰上游作者。**
+
+---
+
+## 装起来
+
+### 🟢 完全不懂技术 → 看这条
+
+1. 打开本页右边的 **Releases**，下载 `install.cmd`
+2. **双击它**
+3. 按屏幕上的中文提示走
+
+缺什么它会自己装、自己说人话。**装一次就行，以后不用再管。**
+
+### 🟡 会敲命令 → 一条就够
+
+```powershell
+dsh plugin --profile web add `
+  https://github.com/Guzhou2002/Fairy-DSH-Optimized/releases/latest/download/dsh-fairy-visual.tgz `
+  https://github.com/Guzhou2002/Fairy-DSH-Optimized/releases/latest/download/dsh-fairy-voice.tgz `
+  https://github.com/Guzhou2002/Fairy-DSH-Optimized/releases/latest/download/dsh-balance-meter.tgz `
+  https://github.com/Guzhou2002/Fairy-DSH-Optimized/releases/latest/download/dsh-browser-dock.tgz `
+  https://github.com/Guzhou2002/Fairy-DSH-Optimized/releases/latest/download/dsh-fairy-startup.tgz
+```
+
+> 用的是别的 profile？把 `web` 换成你的 profile 名。
+
+### 🔵 只想要其中一个
+
+把上面那串地址里，你要的那个留下，其他删掉。
+
+---
+
+## 装完做什么
+
+| 步骤 | 做什么 |
+| --- | --- |
+| 1 | **重启 DSH** |
+| 2 | 设置 → **Fairy** → 打开「**启用**」 |
+| 3 | （可选）在 Fairy 设置里点「**开始自检**」，看朗读能不能出声 |
+
+> 💡 **第 2 步不做的话，视觉和朗读都不会出现** —— 插件装好之后默认是关着的。
+
+---
+
+## 五个插件分别是什么
+
+| 插件 | 干什么 |
+| --- | --- |
+| `dsh-fairy-visual` | **核心**。宠物浮层、HDD 主题、界面重绘、设置里的 Fairy 面板 |
+| `dsh-fairy-voice` | 朗读回复（可接本机 GPT-SoVITS，也可用浏览器自带语音） |
+| `dsh-balance-meter` | 侧栏显示 DeepSeek 余额 |
+| `dsh-browser-dock` | 截图 Dock |
+| `dsh-fairy-startup` | 启动画面 |
+
+---
+
+## 为什么装起来这么简单
+
+`dsh plugin add` 是 **DSH 官方命令**，它自己会完成三件事：
+
+1. 下载插件
+2. **装好依赖**
+3. **注册到你的 profile**
+
+所以**不需要任何安装器**。本分支做的事情，就是让每个插件包「**自带全部东西**」，
+从而能被这条官方命令直接吃下去。
+
+> 技术细节（实测过程与证据）见 [`docs/安装机制实测.md`](docs/安装机制实测.md)。
+
+---
+
+## 需要什么
+
+| 项 | 说明 |
+| --- | --- |
+| **DSH** | 已装好、能正常启动 |
+| **pnpm** | ⚠️ 装 DSH 时**不会**自带它。用 `install.cmd` 会自动帮你装；手动装是 `npm install -g pnpm` |
+| **网络** | 要能连上 npm 仓库。**国内建议挂代理**，否则可能卡在下载依赖那一步 |
+| **GPT-SoVITS** | **只有**用朗读功能才需要。不装也能用其他部分 |
+
+---
+
+## 出问题了？
+
+| 现象 | 怎么办 |
+| --- | --- |
+| 双击 `.cmd` 一闪就没了 | 右键 → 以管理员身份运行；或看它打出来的提示 |
+| 卡在安装很久不动 | 网络问题。挂上代理再试一次 |
+| 装好了但界面上什么都没有 | 设置 → Fairy → 把「**启用**」打开（这一步不能省） |
+| 朗读不出声 | 设置里点「**开始自检**」，它会逐项告诉你卡在哪一层 |
+| 想卸载 | `dsh plugin --profile web remove dsh-fairy-visual dsh-fairy-voice dsh-balance-meter` |
+
+---
+
+## 许可与归属
+
+上游原创代码为 **Apache-2.0**，作者 **橙汁本色**。
+本仓库是**非官方整理分支**，完整保留 `LICENSE` / `NOTICE` / `THIRD_PARTY_NOTICES.md` / `TRADEMARKS.md`；
+所有对上游文件的改动均以 `[local patch 0.2.x]` 注释标注（Apache-2.0 §4(b) 要求的 modified files 提示）。
+
+---
+
+
+# 📜 附录：旧版说明（v0.2.3 及之前 —— zip + `install.ps1` 方式）
+
+> **这一节保留备查，新装用户不用看。**
+> 里面的两个 zip、`install.ps1` 数字键菜单、`link:` 安装方式，
+> 在下一个版本里会被上面那套「`dsh plugin add` + tgz」取代。
+> 等你看到这段时，旧的 `install.ps1` / `uninstall.ps1` 可能已经被删掉了。
+
+---
+
 # Fairy-DSH 可安装整合包
 
 把 [Chengzhibense/Fairy-DSH](https://github.com/Chengzhibense/Fairy-DSH) 这套 DSH 插件整理成**开箱即装**的形式：
