@@ -27,6 +27,7 @@
 | `build-release-0.2.3.ps1` | 打两个 zip（一键安装版 / 一键部署版-含依赖）+ `.sha256` | `pack.ps1`（打 5 个 tgz） |
 | `安装说明-0.2.3.txt` | 傻瓜版图文安装步骤 | `README.md` 顶部 + `install.cmd` 的屏幕提示 |
 | `patches\` | 设置栏合并与语音引擎路线的补丁存档（含 `abandoned\`） | `lib\settings-merge.ps1`（改为脚本生成） |
+| `uninstall-0.3.0-dev.ps1` | 0.3.0 形态的卸载脚本草稿（备份 profile 配置 → 只移除实际存在的依赖 → 清 0.2.x 遗留受管块 → 扫 `package.json` 残留 → 删人设预设目录）。**从未实测过** | 未采用。真要卸载推荐直接跑 `dsh plugin --profile web remove <包名>` |
 
 ---
 
