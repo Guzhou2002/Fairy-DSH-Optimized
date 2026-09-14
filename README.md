@@ -2,6 +2,10 @@
 
 **给 DSH 加一只看着您的 Fairy** —— 浮层、HDD 视觉主题、朗读（**可以不依赖显卡！**）、余额、截图 Dock。
 
+> 🔗 **上游血缘**：本项目**整理自** [Chengzhibense/Fairy-DSH](https://github.com/Chengzhibense/Fairy-DSH)（**孤舟版**）。
+> 群里另有一套 [云朵版 · Fairy-DSH-Exp](https://github.com/addsas222/Fairy-DSH-Exp) —— 那是**另一套独立分发**，
+> 与本分支**没有代码血缘**、也不会同步，**两者只装一个，不要混装**。
+
 > ⚠️ **这是非官方整理分支。**
 > 基于 [橙汁本色](https://github.com/Chengzhibense/Fairy-DSH) 的 **Fairy-DSH** 源代码整理而成，
 > 上游原创代码按 **Apache-2.0** 发布。本分支只做**安装分发**和少量本地增强。
