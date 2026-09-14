@@ -251,8 +251,10 @@ Windows 反斜杠会解析失败。另外 `link:` **不会**装依赖，只有 `
 **每次 `gh release create` 成功之后，不要等用户来要 —— 直接把公告一起交出来。**
 
 - **短**：3~5 行，讲清「这版修了什么 / 我要不要更新 / 怎么更新」
-- 🔴 **开头必须标明这是「孤舟版」**（本分支），并且说清**与「云朵版」不是同一个包、不要混装**：
+- 🔴 **开头必须标明这是「孤舟版」**（本分支），并且说清**与「云朵版」是两套独立分发、只装一个、不要混装**：
   群里同时存在两套 Fairy 分发，群友分不清就会装错、装重、互相覆盖
+  - **孤舟版** = 本仓库 `Guzhou2002/Fairy-DSH-Optimized`
+  - **云朵版** = `https://github.com/addsas222/Fairy-DSH-Exp`（与之相关的调研见 `docs\调研-同源项目Fairy-DSH-Exp.md`）
 - **不写** SHA、不写分支内部术语（`link:`、`tgz`、profile、tag 一律不出现）
 - **结尾必附仓库下载链接**（永久地址）：
   `https://github.com/Guzhou2002/Fairy-DSH-Optimized/releases/latest`
