@@ -2,9 +2,19 @@
 
 **给 DSH 加一只看着您的 Fairy** —— 浮层、HDD 视觉主题、朗读（**可以不依赖显卡！**）、余额、截图 Dock。
 
-> 🔗 **上游血缘**：本项目**整理自** [Chengzhibense/Fairy-DSH](https://github.com/Chengzhibense/Fairy-DSH)（**孤舟版**）。
-> 群里另有一套 [云朵版 · Fairy-DSH-Exp](https://github.com/addsas222/Fairy-DSH-Exp) —— 那是**另一套独立分发**，
-> 与本分支**没有代码血缘**、也不会同步，**两者只装一个，不要混装**。
+> 🔗 **上游血缘**：本项目**整理自** [橙汁本色](https://github.com/Chengzhibense/Fairy-DSH) 的 **Fairy-DSH**，
+> 是**它的分支优化版**（对外叫 **孤舟版**）—— 在橙汁的代码上做**分发**：一条命令装完、出问题能自己查。
+
+> 🤝 **友情链接 · 生态里的三家**（同一个源头，各干一段，**别装重**）
+>
+> | 谁 | 仓库 | 是什么 |
+> | --- | --- | --- |
+> | 🍊 **橙汁本色**（原作者） | [Chengzhibense/Fairy-DSH](https://github.com/Chengzhibense/Fairy-DSH) | 上游原始仓库。作者的最终目标是**独立的 Electron 桌宠应用**，这里是他的开发仓库，**不含安装器、外人装不上** |
+> | ⛵ **孤舟版**（本仓库） | [Guzhou2002/Fairy-DSH-Optimized](https://github.com/Guzhou2002/Fairy-DSH-Optimized) | 在橙汁代码上做**分发与排障**：`install.cmd` 一条命令、Release + SHA256、朗读自检面板、面向新手的文档 |
+> | ☁️ **云朵版** | [addsas222/Fairy-DSH-Exp](https://github.com/addsas222/Fairy-DSH-Exp) | 另一套**独立分发**的**功能深度实验版**：人格包引擎、多会话模式、搜索枢纽、长期记忆、角色扮演+去 AI 味、多 TTS 引擎与语音输入 |
+>
+> ⚠️ **孤舟版与云朵版没有代码血缘、互不同步，而且装的东西会互相覆盖 —— 只装一个。**
+> 想折腾功能面，可以去看看云朵版；想**装上就能用、出问题能自己查**，留在这儿。
 
 > ⚠️ **这是非官方整理分支。**
 > 基于 [橙汁本色](https://github.com/Chengzhibense/Fairy-DSH) 的 **Fairy-DSH** 源代码整理而成，
