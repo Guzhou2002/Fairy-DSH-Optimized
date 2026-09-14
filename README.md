@@ -43,23 +43,28 @@
 
 ### 🟢 完全不懂技术 → 下载、双击
 
-| 下载这个 | 装什么 | 给谁用 |
+| 下载这个 | 干什么 | 给谁用 |
 | --- | --- | --- |
-| **[`install.cmd`](https://github.com/Guzhou2002/Fairy-DSH-Optimized/releases/latest/download/install.cmd)** | 3 个：视觉浮层 + 朗读 + 余额 | ✅ **推荐，绝大多数人用这个** |
-| **[`install_full.cmd`](https://github.com/Guzhou2002/Fairy-DSH-Optimized/releases/latest/download/install_full.cmd)** | 全部 5 个（多装启动画面 + 截图 Dock，**有已知风险**） | ⚠️ 清楚后果、确实想要的人 |
+| **[`install.cmd`](https://github.com/Guzhou2002/Fairy-DSH-Optimized/releases/latest/download/install.cmd)** | 装 3 个：视觉浮层 + 朗读 + 余额 | ✅ **推荐，绝大多数人用这个** |
+| **[`install_full.cmd`](https://github.com/Guzhou2002/Fairy-DSH-Optimized/releases/latest/download/install_full.cmd)** | 装全部 5 个（多装启动画面 + 截图 Dock，**有已知风险**） | ⚠️ 清楚后果、确实想要的人 |
+| **[`uninstall.cmd`](https://github.com/Guzhou2002/Fairy-DSH-Optimized/releases/latest/download/uninstall.cmd)** | **卸**：卸掉插件与预设，并把你改过的「默认预设」还原回去 | 🧹 不用了、想清干净的人 |
 
-**📦 下载哪个？**
+**📦 即装即卸**
 
-- **只想装（推荐）**：下 `install.cmd`，双击 —— 自动装 3 个安全插件（视觉浮层 / 朗读 / 余额）
-- **想要全部 5 个**：下 `install_full.cmd`，双击（装前会先把风险讲清楚并要求确认）
+- **装（推荐）**：下 `install.cmd`，双击 —— 自动装 3 个安全插件（视觉浮层 / 朗读 / 余额）
+- **装全部 5 个**：下 `install_full.cmd`，双击（装前会先把风险讲清楚并要求确认）
+- **卸**：下 `uninstall.cmd`，双击 —— ⚠️ **`uninstall.ps1` 要一起下**，两个放同一个文件夹里（那个 `.cmd` 只是启动器，真正的逻辑在 `.ps1` 里）
 - 不想用安装器：直接下 5 个 `.tgz`，用 `dsh plugin --profile web add <文件路径>` 装
 
 下载完 **双击它**，按屏幕上的中文提示走就行。缺什么它会自己装、自己说人话，失败了也会告诉你卡在哪一步、该怎么办。
 
-> 💡 这两个链接**永远指向最新版** —— 收藏起来，想更新时重新下载再双击一次就行。
+> 🔒 **卸载不删你的数据**：参考音频、朗读设置、语音简报的 API Key 都在 `~/.dsh/fairy-voice/`，
+> 卸载脚本**一个字节都不动** —— 要彻底清干净，脚本会在最后把这个路径打给你，删不删由你自己决定。
+
+> 💡 这几个链接**永远指向最新版** —— 收藏起来，想更新时重新下载再双击一次就行。
 >
 > ⚠️ 如果你是从 **Releases 页面**进来的，会看到一堆 `.tgz` 文件 ——
-> **那些不用管**，只需要下载里面的 `install.cmd`（或 `install_full.cmd`）。
+> **那些不用管**，只需要下载里面的 `install.cmd`（或 `install_full.cmd`）；卸载则用 `uninstall.cmd` + `uninstall.ps1`。
 
 ### 🟡 会敲命令 → 一条就够
 
@@ -356,9 +361,27 @@ DSH 升级后若界面元素变化，插件会**静默降级**（有 capability 
 
 ### E. 卸载 / 彻底重来
 
+**不会打命令？双击 [`uninstall.cmd`](https://github.com/Guzhou2002/Fairy-DSH-Optimized/releases/latest/download/uninstall.cmd)**
+（**记得把 `uninstall.ps1` 一起下下来，放同一个文件夹**）。
+
+它会做七件事：备份 profile 与设置 → 卸掉装过的 Fairy 插件 → **把你改过的「新会话默认预设」还原回去**
+→ 删掉人设预设目录 → 扫描历史版本残留 → 校验 profile → 把保留的用户数据路径打给你。
+
+> 🔴 **为什么一定要还原默认预设**：不还原的话，`settings.yaml` 里还写着"新会话默认用 Fairy"，
+> 而预设已经被删了 —— 结果就是**「点新建会话没反应」**。卸载反而把机器弄坏，这个脚本专治它。
+
+会打命令就这样：
+
 ```powershell
+# 想手工卸（脚本也走同一条路）
 dsh plugin --profile web remove dsh-fairy-visual dsh-fairy-voice dsh-balance-meter
+
+# 老版本（0.2.x）可能留过受管块、或 package.json 里有残留行，加开关让脚本一起清（会先备份）
+.\uninstall.ps1 -CleanBundle
 ```
+
+> 🔒 **卸载不删用户数据**：`~/.dsh/fairy-voice/`（参考音频 / 朗读设置 / 语音简报 API Key）原样保留。
+> 要彻底清干净就自己删那个目录 —— **删了就找不回来**。
 
 也可以双击根目录的 **`install.cmd`** 重装一遍 —— 它同时是**安装器**和**修复器**。
 

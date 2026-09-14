@@ -68,9 +68,23 @@ dsh --profile web --dump-config
 
 ## 3. 卸载
 
+**优先让用户双击 `uninstall.cmd`**（**必须**和 `uninstall.ps1` 放同一个文件夹 —— 那个 `.cmd`
+是个纯 ASCII 启动器，逻辑在 `.ps1` 里）。它会备份配置 → 卸插件 → **还原「新会话默认预设」**
+→ 删预设目录 → 扫历史残留 → 校验 profile → 把保留的用户数据路径打给用户。
+
+> 🔴 **这条别漏**：卸载**必须**还原 `settings.yaml` 里的 `agent-presets.default`
+> （优先用 `~/.dsh/.fairy-persona/default-preset-backup.json`，没有就回落 `standard`）。
+> 不还原的话，默认值还指着已被删掉的 `fairy` → **「点新建会话没反应」**，卸载反而把机器弄坏。
+
+会打命令才用手工：
+
 ```powershell
 dsh plugin --profile web remove dsh-fairy-visual dsh-fairy-voice dsh-balance-meter
+.\uninstall.ps1 -CleanBundle   # 老版本（0.2.x）留过受管块 / package.json 有残留行时才需要，会先备份
 ```
+
+> 🔒 **卸载不删用户数据**：`~/.dsh/fairy-voice/`（参考音频 / 朗读设置 / 语音简报 API Key）原样保留，
+> 只在最后把路径打给用户，删不删由他自己决定。
 
 另一个做法是双击仓库根目录的 `install.cmd` 重新安装（它是安装器也是修复器）。
 
@@ -162,6 +176,7 @@ dsh plugin --profile web remove dsh-fairy-visual dsh-fairy-voice dsh-balance-met
 | 改动了任一插件包内容 | SHA256 会变 | 必须重新 `.\pack.ps1` → 更新 `docs\交接摘要.md` §8 的 SHA → 更新 Release 附件 → **tag 对齐** |
 | 改了 `lib\settings-merge.ps1`，或换了 `upstream-originals\` 里的原件 | 生成物已过期 | 重新生成，再 `node --check` 两个 `client.js` |
 | 改了 `install.cmd` / `install_full.cmd` | 这两个**在** Release 里，SHA 会变 | 按 §6.1 用 GBK 写回，并同步更新 SHA 与 Release 正文 |
+| 改了 `uninstall.cmd` / `uninstall.ps1` | 这两个**也在** Release 里，SHA 会变；**且必须成对分发** | 改完 `uninstall.ps1` 要**补回 BOM**（`edit` 工具会吃掉）→ `Parser::ParseFile` 校验 → `pack.ps1` → 同步 SHA 与 Release 正文。⚠️ **`.cmd` 必须保持纯 ASCII + CRLF + 无 BOM** |
 | 🔴 想把用户数据（参考音频 / API Key）挪进插件目录「好一起管理」 | **绝不可以** —— 见下面 §5.4.1 | 🛑 **停**。用户数据一律放 `~/.dsh/fairy-voice/` |
 
 #### 5.4.1 🔴 为什么用户数据【绝不能】放进插件目录
@@ -215,6 +230,11 @@ dsh plugin --profile web remove dsh-fairy-visual dsh-fairy-voice dsh-balance-met
 - 改完必须用 GBK 严格编码写回，且不能出现 GBK 存不下的字符（emoji 一律不要）
 - 参考正确做法：同目录的 `verify.cmd` —— 它是**纯 ASCII 启动器**，中文全放在 `.ps1` 里
 
+> ✅ **`uninstall.cmd` 走的就是这条路（以后新脚本一律照它来）**：它**不含一个中文字**，
+> 中文全放在 `uninstall.ps1`（UTF-8 带 BOM）里 —— **根本不用碰 GBK**，936 机器上也绝不会乱码。
+> 代价是**两个文件必须一起分发**：Release 里 `uninstall.cmd` 和 `uninstall.ps1` 缺一个，
+> 双击就报"找不到 uninstall.ps1"。**别再往 `.cmd` 里塞中文了。**
+
 ### 6.2 `.ps1` 必须 UTF-8 带 BOM
 
 PowerShell 5.1 读无 BOM 的 `.ps1` 会按 GBK 解析，满屏假语法错误。
@@ -261,6 +281,8 @@ Windows 反斜杠会解析失败。另外 `link:` **不会**装依赖，只有 `
 - **结尾必附仓库下载链接**（永久地址）：
   `https://github.com/Guzhou2002/Fairy-DSH-Optimized/releases/latest`
 - 老用户更新步骤写在前面：**重下 `install.cmd` 双击一遍 → 重启 DSH**
+- 顺带提一句卸载入口：**不用了就双击 `uninstall.cmd`**（`uninstall.ps1` 要一起下、放同一个文件夹）——
+  它会连"新会话默认预设"一起还原，**不还原的话卸完反而会「点新建会话没反应」**
 
 > ⚠️ **推而广之**：改任何**用户家目录里的产物**（`.agent-presets\fairy\`、配置模板……）之前，
 > 先想清楚**老用户怎么拿到新版本** —— 否则"包更新了、家目录还是旧的"，**发版 ≠ 修好**（v0.3.6 差点栽在这儿）。

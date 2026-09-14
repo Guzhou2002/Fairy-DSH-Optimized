@@ -121,11 +121,12 @@ foreach ($key in $Catalog.Keys) {
   }
 }
 
-# install.cmd / install_full.cmd 也放进输出目录：群友在 Release 页只会看到一堆 tgz，不知道怎么办。
+# install.cmd / install_full.cmd / uninstall.cmd 也放进输出目录：群友在 Release 页只会看到一堆 tgz，不知道怎么办。
 # 它们的永久地址 releases/latest/download/<文件名> 同样不带版本号，可长期引用。
-# 两个都要传：README 里两个入口都给了链接，少传一个那个链接就会 404。
+# ⚠️ uninstall.ps1 必须跟 uninstall.cmd 一起传 —— 那个 .cmd 只是个纯 ASCII 启动器，
+#    真正的逻辑在 .ps1 里（中文放 .ps1 才能彻底躲开 936 代码页的乱码坑）。
 $installerFiles = @()
-foreach ($f in @('install.cmd', 'install_full.cmd')) {
+foreach ($f in @('install.cmd', 'install_full.cmd', 'uninstall.cmd', 'uninstall.ps1')) {
   $src = Join-Path $root $f
   if (Test-Path -LiteralPath $src) {
     Copy-Item -LiteralPath $src -Destination (Join-Path $OutDir $f) -Force
@@ -165,6 +166,7 @@ $fileCount = $results.Count + @($installerFiles).Count
 Write-Host "  上传 GitHub Release —— 就这 $fileCount 个文件（都在 $OutDir）：" -ForegroundColor White
 Write-Host "    install.cmd          （双击就能装，装 3 个安全插件）" -ForegroundColor DarkGray
 Write-Host "    install_full.cmd     （完整版 5 个，装前会先讲风险并要确认）" -ForegroundColor DarkGray
+Write-Host "    uninstall.cmd        （双击就能卸：卸插件 + 预设，并还原默认预设）" -ForegroundColor DarkGray
 foreach ($r in $results) { Write-Host "    $($r.文件)" -ForegroundColor DarkGray }
 Write-Host ""
 Write-Host "  传完后的永久地址（README 里用的就是这些，把 <用户名>/<仓库> 换掉）：" -ForegroundColor White
