@@ -130,6 +130,8 @@ dsh plugin --profile web remove dsh-fairy-visual dsh-fairy-voice dsh-balance-met
 | `verify-isolated.ps1` 输出 `degraded official capability [ENHANCEMENT]: balanceAction` | **不是故障**：隔离 profile 没装 `dsh-balance-meter`，官方侧栏没有余额入口，Fairy 找不到锚点 | 不用处理，装了 balance 就消失 |
 | DSH 升级后 `DSH_FAIRY_LOG` 里 `operation:"capability.missing"` **条目变多** | 官方 DOM / ARIA 契约漂移，功能在**静默减少** | 跑 `.\verify-isolated.ps1` 看是否仍 `PASS`；把新增条目交给用户 |
 | `apply` 不再 success，或出现 `exceptionThrown` | 加载失败 | 🛑 **停**：先 `dsh plugin --profile web remove …` 回滚，再排查 |
+| 🔴 报 `SyntaxError: The requested module '@deepseek-ai/dsh-session-query' does not provide an export named '…'` | **宿主自己的 `@deepseek-ai/*` 混版**（顶层还是老版本、另有包已是新版）→ runtime 自身起不来，**与我们插件无关** | 让用户把 `@deepseek-ai/*` **全量重装到同一版本**。⚠️ **别与铁律①混淆** —— 铁律①管的是"**插件自己 pin 的** `dsh-settings` 不许提升"，本条管的是"**宿主自己的包要内部一致**"。详见 `docs\风险-DSH换代.md` §1 |
+| 🔴 DSH 升级后又「点新建会话没反应」，报错仍含 `agent-preset/invalid: … failed to apply loader entry …`，**但点名的那一行不是 `persona`** | preset 里**按包名引用的官方插件改名/抽包**了（`tool-*` / `plan-mode` / `compaction` …）→ 那一行挂载失败 → 整个 preset 失败 → 会话创建被回滚 | ① 看报错点名哪一行 ② 把那行 `disabled: true` 二分 ③ 拿新版内置预设（`standard`/`ptc`/`cordis`）对齐包名。⚠️ **别一看"点新建会话没反应"就只想到 `text`/`prefix`** —— 那是 v0.3.6/v0.3.7 的根因，不是唯一根因。详见 `docs\风险-DSH换代.md` §3 |
 
 ### 5.3 装好了但不好用（功能阶段）
 
@@ -277,6 +279,7 @@ Windows 反斜杠会解析失败。另外 `link:` **不会**装依赖，只有 `
 | **`docs\接手-v0.3.4.md`** | 更早一轮（v0.3.4）的增量，**只当历史看**（含「`node --check` 抓不到未导入的符号」、面板源码在 `settings-merge.ps1`、MOSS 合成有随机性、音色 1:1 继承自参考音频） |
 | `docs\接手-v0.3.2.md` | 更早一轮的增量（第三轮：第二个朗读引擎 MOSS-TTS-Nano）。它说的「唯一未完成项」**已经做完了**，只当历史看 |
 | `docs\交接摘要.md` | 全量档案：项目当前状态、待办、全部踩坑记录 |
+| **`docs\风险-DSH换代.md`** | ⭐ **DSH 一升级就可能坏东西**：换代风险登记（宿主混版安装、客户端面孔换代、preset 官方包名失效、工具呈现/段落 order 改名、DOM/ARIA 漂移）+ **升级动作清单**。**升级 DSH 之前先读它** |
 | `docs\Release正文模板.md` | 发版时填 Release 正文用 + **「提交前自检」清单**（v0.3.1/v0.3.2 连着两次正文都没贴全） |
 | `docs\安装机制实测.md` | `dsh plugin add` 各形态（`link:` / `file:` / `.tgz` / 远程 URL）的实测结论 |
 | `docs\仓库与上游.md` | 如何合并上游更新 |
