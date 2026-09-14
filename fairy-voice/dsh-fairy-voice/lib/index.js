@@ -32,6 +32,14 @@ const MAX_VOICE_BRIEF_OUTPUT_LENGTH = 260;
 const DEEPSEEK_V4_FLASH_MODEL = 'deepseek-v4-flash';
 const DEEPSEEK_CHAT_COMPLETIONS_URL = 'https://api.deepseek.com/chat/completions';
 const VOICE_BRAIN_CONFIG_PATH = join(homedir(), '.dsh', 'fairy-voice', 'voice-brain.json');
+/* [local patch 0.3.5] 检查更新：宿主启动后延迟查一次「最新 Release」，结果落盘给设置面板读。
+ * 规则：3 秒超时、延迟 5 秒、全程静默 —— 查不到就当没这回事，
+ * 绝不能让它在启动时刷错误日志，更不能拖慢启动（v0.3.2 的教训：宿主侧的错会整个插件起不来）。 */
+const UPDATE_CHECK_PATH = join(homedir(), '.dsh', 'fairy-voice', 'update-check.json');
+const UPDATE_CHECK_TTL_MS = 3 * 60 * 60 * 1000;
+const UPDATE_CHECK_TIMEOUT_MS = 3000;
+const UPDATE_CHECK_DELAY_MS = 5000;
+const UPDATE_RELEASES_API = 'https://api.github.com/repos/Guzhou2002/Fairy-DSH-Optimized/releases/latest';
 function safeText(value) {
   return typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
 }
@@ -452,6 +460,43 @@ const createVoiceBrief = createVoiceBriefFallback({
   endpoint: DEEPSEEK_CHAT_COMPLETIONS_URL,
 });
 
+/** 读更新检查缓存。不存在、读不动、格式不对，一律返回 null（绝不抛）。 */
+async function readUpdateCheckCache() {
+  try {
+    const value = JSON.parse(await readFile(UPDATE_CHECK_PATH, 'utf8'));
+    const tag = typeof value?.tag === 'string' ? value.tag : '';
+    const checkedAt = Number(value?.checkedAt);
+    if (!tag || !Number.isFinite(checkedAt)) return null;
+    return { tag, checkedAt };
+  } catch (error) {
+    return null;
+  }
+}
+
+/** 问一次 GitHub 的 releases/latest 并落盘。失败一律返回 null —— 调用方不需要区分原因。 */
+async function checkLatestRelease(fetchImpl = fetch, now = Date.now()) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort('timeout'), UPDATE_CHECK_TIMEOUT_MS);
+  try {
+    const response = await fetchImpl(UPDATE_RELEASES_API, {
+      method: 'GET',
+      signal: controller.signal,
+      headers: { accept: 'application/vnd.github+json' },
+    });
+    if (!response.ok) return null;
+    const payload = await response.json();
+    const tag = typeof payload?.tag_name === 'string' ? payload.tag_name.trim() : '';
+    if (!tag) return null;
+    const cache = { tag, checkedAt: now };
+    await writePrivateJson(UPDATE_CHECK_PATH, cache);
+    return cache;
+  } catch (error) {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export function createFairyVoiceHandlers({ fetchImpl = fetch, readConfig = readVoiceBrainConfig, writeConfig = writeVoiceBrainConfig, clearConfig = clearVoiceBrainConfig } = {}) {
   const sentencePreparation = createSentencePreparation();
   const pcmStreamHandler = createPcmStreamHandler();
@@ -480,6 +525,30 @@ export function createFairyVoiceHandlers({ fetchImpl = fetch, readConfig = readV
       for (const controller of activeControllers) controller.abort('disposed');
       activeControllers.clear();
       activeTtsController = null;
+    },
+    /* [local patch 0.3.5] 检查更新：面板读缓存 / 面板把自己查到的结果写回。
+     * 写回是往磁盘写文件，所以入参必须严校验 —— 不能让它变成「任意内容写任意文件」的通道。 */
+    updateStatus: async (_req, res) => {
+      try {
+        sendJson(res, 200, await readUpdateCheckCache());
+      } catch (error) {
+        sendJson(res, 200, null);
+      }
+    },
+    updateCache: async (req, res) => {
+      try {
+        const body = await readJson(req);
+        const tag = typeof body?.tag === 'string' ? body.tag.trim() : '';
+        const checkedAt = Number(body?.checkedAt);
+        if (!/^[0-9A-Za-z.\-]{1,40}$/.test(tag) || !Number.isFinite(checkedAt)) {
+          sendJson(res, 400, { ok: false, reason: 'invalid' });
+          return;
+        }
+        await writePrivateJson(UPDATE_CHECK_PATH, { tag, checkedAt });
+        sendJson(res, 200, { ok: true });
+      } catch (error) {
+        sendJson(res, 500, { ok: false });
+      }
     },
     status: async (_req, res) => {
       const startedAt = diagnostics.start();
@@ -655,6 +724,11 @@ export function apply(ctx) {
    * 失败也不影响启动：日志里 warn 一下就好，不该因为一个目录建不出来就让插件挂掉。 */
   void ensureFairyDirectories().catch((error) => diagnostics.warn('reference.dir', {}, error));
   const handlers = createFairyVoiceHandlers();
+  /* [local patch 0.3.5] 启动后延迟 5 秒查一次有没有新版本。
+   * 设置面板打开时还会自己查一次（浏览器走代理，成功率高），两边共用同一份缓存，3 小时内有效。
+   * 刻意【不写任何日志】：没梯子、被墙、超时，一律当没这回事 —— 这条绝不能影响启动。 */
+  const updateTimer = setTimeout(() => { void checkLatestRelease().catch(() => {}); }, UPDATE_CHECK_DELAY_MS);
+  if (typeof updateTimer.unref === 'function') updateTimer.unref();
   ctx.inject(['webServer'], (ws) => ws.effect(() => {
     const unregisterStatus = ws.webServer.register({ kind: 'exact', path: '/fairy-voice/status', handler: handlers.status });
     const unregisterPrepare = ws.webServer.register({ kind: 'exact', path: '/fairy-voice/prepare', handler: handlers.prepare });
@@ -664,6 +738,8 @@ export function apply(ctx) {
     const unregisterBrainBrief = ws.webServer.register({ kind: 'exact', path: '/fairy-voice/brain/brief', handler: handlers.voiceBrief });
     const unregisterConfig = ws.webServer.register({ kind: 'exact', path: '/fairy-voice/config', handler: handlers.config });
     const unregisterSelfCheck = ws.webServer.register({ kind: 'exact', path: '/fairy-voice/selfcheck', handler: handlers.selfcheck });
+    const unregisterUpdateStatus = ws.webServer.register({ kind: 'exact', path: '/fairy-voice/update/status', handler: handlers.updateStatus });
+    const unregisterUpdateCache = ws.webServer.register({ kind: 'exact', path: '/fairy-voice/update/cache', handler: handlers.updateCache });
     return () => {
       handlers.dispose();
       unregisterStatus?.();
@@ -674,6 +750,8 @@ export function apply(ctx) {
       unregisterBrainBrief?.();
       unregisterConfig?.();
       unregisterSelfCheck?.();
+      unregisterUpdateStatus?.();
+      unregisterUpdateCache?.();
     };
   }));
   }, { surface: 'host' });

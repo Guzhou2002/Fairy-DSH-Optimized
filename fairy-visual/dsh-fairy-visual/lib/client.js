@@ -7710,7 +7710,105 @@ html[data-dsh-fairy-visual][data-dsh-fairy-theme="light"] [data-dsh-fairy-mascot
         className: 'dsh-fairy-notice',
         'data-dsh-fairy-notice': 'true',
         style: { fontSize: '11px', lineHeight: 1.6, opacity: 0.55, marginBottom: '12px' },
-        children: '当前版本 v0.3.4 · 最新打包时间 2026-09-14 03:39 · 本包为「孤舟蓑笠」基于「橙汁本色」开源项目的优化分支 · 交流群 1124349108'
+        children: '当前版本 v0.3.5 · 最新打包时间 2026-09-14 13:37 · 本包为「孤舟蓑笠」基于「橙汁本色」开源项目的优化分支 · 交流群 1124349108'
+      });
+    }
+    /* [local patch 0.3.5] 检查更新：只在面板挂载时查一次，【绝不】放进每 3 秒的重算里。
+     * 两条数据来源：① 宿主启动时查过并落盘（读 /fairy-voice/update/status）；
+     * ② 缓存缺失或超过 3 小时，才由浏览器自己查 GitHub —— 浏览器走系统/梯子代理，
+     *    比宿主裸连成功率高得多；查到就回写宿主，两边共用同一份缓存。
+     * 状态会明说：检测中 / 已是最新 / 检测失败（小灰字）/ 有新版本（红字）。
+     * 只有【宿主】那侧保持完全静默（不写日志、不弹错），面板上该说的一句不少说。 */
+    function FairyUpdateNotice() {
+      const LOCAL_VERSION = '0.3.5';
+      const REPO_RELEASES = 'https://github.com/Guzhou2002/Fairy-DSH-Optimized/releases/latest';
+      const REPO_HOME = 'https://github.com/Guzhou2002/Fairy-DSH-Optimized';
+      const RELEASES_API = 'https://api.github.com/repos/Guzhou2002/Fairy-DSH-Optimized/releases/latest';
+      const UPDATE_COMMAND = 'dsh plugin --profile web add https://github.com/Guzhou2002/Fairy-DSH-Optimized/releases/latest/download/dsh-fairy-visual.tgz https://github.com/Guzhou2002/Fairy-DSH-Optimized/releases/latest/download/dsh-fairy-voice.tgz https://github.com/Guzhou2002/Fairy-DSH-Optimized/releases/latest/download/dsh-balance-meter.tgz';
+      // phase: checking（正在查）/ latest（已是最新）/ failed（查不到）/ update（有新版本 → 红字）
+      const [phase, setPhase] = React.useState('checking');
+      const [remoteTag, setRemoteTag] = React.useState('');
+      React.useEffect(() => {
+        let alive = true;
+        const TTL_MS = 3 * 60 * 60 * 1000;
+        // 逐段比数字：1.0.10 > 1.0.9（不能按字符串比）
+        const isNewer = (remote, local) => {
+          const a = String(remote).split('.');
+          const b = String(local).split('.');
+          for (let i = 0; i < Math.max(a.length, b.length); i += 1) {
+            const na = Number(a[i] || 0);
+            const nb = Number(b[i] || 0);
+            if (na !== nb) return na > nb;
+          }
+          return false;
+        };
+        const settle = (cache) => {
+          if (!alive || !cache || typeof cache.tag !== 'string') return;
+          if (isNewer(cache.tag.replace(/^v/i, ''), LOCAL_VERSION)) {
+            setRemoteTag(cache.tag);
+            setPhase('update');
+          } else {
+            setPhase('latest');
+          }
+        };
+        (async () => {
+          let cache = null;
+          try {
+            const status = await fetch('/fairy-voice/update/status', { cache: 'no-store' });
+            if (status.ok) cache = await status.json();
+          } catch (error) { /* 旧包没这条路由，跳过，接着走浏览器自查 */ }
+          const stale = !cache || !Number.isFinite(cache.checkedAt) || Date.now() - cache.checkedAt > TTL_MS;
+          if (!stale) { settle(cache); return; }
+          try {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort('timeout'), 3000);
+            const response = await fetch(RELEASES_API, { signal: controller.signal, headers: { accept: 'application/vnd.github+json' } });
+            clearTimeout(timer);
+            if (!response.ok) throw new Error('http ' + response.status);
+            const payload = await response.json();
+            if (typeof payload?.tag_name !== 'string' || !payload.tag_name) throw new Error('no-tag');
+            const fresh = { tag: payload.tag_name, checkedAt: Date.now() };
+            try {
+              await fetch('/fairy-voice/update/cache', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(fresh) });
+            } catch (error) { /* 写不回去不影响本次显示 */ }
+            settle(fresh);
+          } catch (error) {
+            // 超时 / 连不上（多半是没挂代理）：明说一句，别让它静悄悄什么都没发生
+            if (alive) setPhase('failed');
+          }
+        })();
+        return () => { alive = false; };
+      }, []);
+      // 不是「有新版本」，就在顶部版本声明行下面留一行小灰字（不打扰）
+      if (phase !== 'update' || !remoteTag) {
+        return jsx('div', {
+          'data-dsh-fairy-update': phase,
+          // 样式跟「当前版本 v0.3.5 · 最新打包时间 …」那行一致（同字号 11px、同透明度 0.55）。
+          // [local patch 0.3.5] 它现在排在版本行【上面】（放最顶上），所以不再用负 marginTop 去贴它。
+          style: { fontSize: '11px', lineHeight: 1.6, opacity: 0.55, marginTop: 0, marginBottom: '4px' },
+          children: phase === 'checking'
+            ? '正在检测更新……'
+            : phase === 'failed'
+              ? '检测更新失败 —— 连不上 GitHub，可能需要代理。不影响 Fairy 的使用。'
+              // [local patch 0.3.5] 「已是最新版本」做成超链接，点开就是本仓库主页
+              : jsx('a', {
+                  href: REPO_HOME, target: '_blank', rel: 'noreferrer',
+                  style: { color: 'inherit', textDecoration: 'underline' },
+                  children: '已是最新版本（v' + LOCAL_VERSION + '）· 打开仓库'
+                })
+        });
+      }
+      return jsxs('div', {
+        'data-dsh-fairy-update': 'update',
+        style: { marginBottom: '12px', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--dsw-alias-state-error-primary, #d84a3a)', background: 'color-mix(in srgb, var(--dsw-alias-state-error-primary, #d84a3a) 12%, transparent)', color: 'var(--dsw-alias-state-error-primary, #d84a3a)', fontSize: '12px', lineHeight: 1.7, fontWeight: 700 },
+        children: [
+          '🆕 有新版本 ' + remoteTag + '（你现在是 v' + LOCAL_VERSION + '）',
+          jsxs('div', { style: { fontWeight: 400, marginTop: '4px' }, children: [
+            jsx('a', { href: REPO_RELEASES, target: '_blank', rel: 'noreferrer', style: { color: 'inherit' }, children: '点这里去下载' }),
+            '　更新命令（复制到终端跑一次，装完重启 DSH）：'
+          ] }),
+          jsx('div', { style: { fontWeight: 400, marginTop: '2px', wordBreak: 'break-all', fontFamily: 'ui-monospace,Menlo,monospace', fontSize: '11px', userSelect: 'all' }, children: UPDATE_COMMAND })
+        ]
       });
     }
     // [local patch 0.2.3] 自检面板：面向完全不懂技术的使用者，每一项都给"怎么修"
@@ -7805,6 +7903,16 @@ html[data-dsh-fairy-visual][data-dsh-fairy-theme="light"] [data-dsh-fairy-mascot
               id: 'message', title: '消息识别（能不能读到要朗读的内容）', level: 'warn',
               detail: '插件已挂上，但这次还没有打开过任何会话，所以暂时读不到消息。这一项要等你在会话里看过回复之后才准。',
               fix: '回到会话页面（新建一个会话，或打开已有的），随便问一句并等回复跑完，再回设置里点「重新自检」。'
+            });
+          } else if (!diag.chatSource && !diag.structure) {
+            /* [local patch 0.3.5] 页面上的朗读客户端是 0.3.1 之前的旧包。
+             * 那版只会读 snapshot.chat（DSH 早就不给这个字段）→ 必然读不到消息。
+             * 判据：chatSource / structure 都是 0.3.1 加的，且【每次读时间线都会写】，
+             * 两个都缺说明跑的压根不是新代码 —— 让使用者重启 + Ctrl+F5，别去查 DSH。 */
+            list.push({
+              id: 'message', title: '消息识别（能不能读到要朗读的内容）', level: 'fail',
+              detail: '读不到消息：你页面里的朗读客户端是【旧版本】（诊断信息里缺 chatSource / structure 这两个新字段）。这不是 DSH 的问题，也不是操作失误 —— 更新插件之后，页面还在跑旧脚本。',
+              fix: '先重启 DSH，然后在本页按 Ctrl+F5 强制刷新，再回来看这一项。要是还这样，说明 dsh-fairy-voice 这个包本身没更新到最新（设置页顶部那个「整理版」版本号来自视觉包，代表不了它），请重新装一次。'
             });
           } else if (diag.hasChat !== true) {
             list.push({
@@ -7948,6 +8056,18 @@ html[data-dsh-fairy-visual][data-dsh-fairy-theme="light"] [data-dsh-fairy-mascot
         }
         const diag = (typeof window !== 'undefined' && window.__FAIRY_VOICE_DIAG__) || null;
         lines.push(`客户端诊断：${diag ? JSON.stringify(diag) : '（页面里没有诊断数据）'}`);
+        /* [local patch 0.3.5] 把「结构摘要」一起复制进去 ——
+         * 以前它在下另一个框里，要复制两次、发出去是一大一小两段，看着乱还容易漏。
+         * 这里用 readShapeText() 现算：面板上那个只读框已经删了，且它读的是
+         * window.__FAIRY_VOICE_DIAG__ 的当下值，所以闭包旧了也不影响结果。 */
+        /* [local patch 0.3.5] 结构摘要改成现算：面板上那个文本框已删。
+         * readShapeText 读的是 window.__FAIRY_VOICE_DIAG__ 的当下值，所以闭包旧了也不影响结果。 */
+        const shapeValue = readShapeText();
+        if (shapeValue) {
+          lines.push('');
+          lines.push('---- 结构摘要（只有字段名与类型，不含任何取值）----');
+          lines.push(shapeValue);
+        }
         const text = lines.join('\n');
         setDiagText(text);
         try {
@@ -8051,8 +8171,10 @@ html[data-dsh-fairy-visual][data-dsh-fairy-theme="light"] [data-dsh-fairy-mascot
           }) : null
         ]
       });
-      // [local patch 0.3.1] 结构摘要文本：供面板底部显示（每次 tick 重算，只有字段名和类型）
-      const shapeText = (() => {
+      /* [local patch 0.3.1] 结构摘要文本（只输出「字段名 + 类型」）。
+       * [local patch 0.3.5] 面板上那个只读文本框已经删了 —— 这段数据现在只在「复制诊断信息」里用，
+       * 所以从「每次渲染算一次的常量」改成「按需调用的函数」：复制时现算，永远是最新的。 */
+      const readShapeText = () => {
         try {
           const current = (typeof window !== 'undefined' && window.__FAIRY_VOICE_DIAG__) || null;
           if (!current) return '（页面里没有 __FAIRY_VOICE_DIAG__：客户端脚本没跑到）';
@@ -8074,7 +8196,7 @@ html[data-dsh-fairy-visual][data-dsh-fairy-theme="light"] [data-dsh-fairy-mascot
           }
           return lines.join('\n');
         } catch (error) { return '（读取失败）'; }
-      })();
+      };
       return jsxs('div', {
         className: 'dsh-fairy-voice-panel',
         'data-dsh-fairy-voice-panel': 'true',
@@ -8101,12 +8223,23 @@ html[data-dsh-fairy-visual][data-dsh-fairy-theme="light"] [data-dsh-fairy-mascot
                 : (persona.available ? '第 1 步：勾上这里，把 Fairy 人设装进 DSH' : '暂不可用 · 原因见下方红字')
             })
           ] }),
-          jsx('div', {
+          jsxs('label', {
+            className: 'dsh-fairy-persona-row',
             'data-dsh-fairy-default-state': persona.isDefault ? 'on' : 'off',
-            style: { fontSize: '12px', lineHeight: 1.7, opacity: 0.9 },
-            children: persona.isDefault
-              ? `第 2 步 ✅ 现在「新会话」默认就用 Fairy 人设了`
-              : `第 2 步：把它设成「新会话默认用的预设」（现在的默认：${persona.defaultReadable ? (persona.defaultPreset || '未设置') : '查不到，可能插件宿主需要重启'}）`
+            style: { display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', lineHeight: 1.7, opacity: 0.9 },
+            children: [
+              /* [local patch 0.3.5] 第 2 步也配一个复选框：位置、尺寸跟第 1 步完全一致，
+               * 勾上 = 一键设为默认、取消 = 还原成原来的预设，跟下面那个按钮是同一个动作（toggleDefaultPreset）。
+               * 原来这行是裸文字、顶到最左边，比上一行少一个复选框，看着不平整。 */
+              jsx('input', {
+                type: 'checkbox', checked: persona.isDefault === true,
+                disabled: persona.busy || (!persona.installed && !persona.available),
+                onChange: toggleDefaultPreset
+              }),
+              jsx('span', { children: persona.isDefault
+                ? `第 2 步 ✅ 现在「新会话」默认就用 Fairy 人设了`
+                : `第 2 步：把它设成「新会话默认用的预设」（现在的默认：${persona.defaultReadable ? (persona.defaultPreset || '未设置') : '查不到，可能插件宿主需要重启'}）` })
+            ]
           }),
           jsxs('div', { style: { display: 'flex', gap: '8px', flexWrap: 'wrap' }, children: [
             jsx('button', {
@@ -8133,7 +8266,7 @@ html[data-dsh-fairy-visual][data-dsh-fairy-theme="light"] [data-dsh-fairy-mascot
             children: '⚠ 人设只对「新建的会话」生效：已经开着的会话不会变，请新开一个会话看效果。'
           }),
           persona.error ? jsx('div', { style: { fontSize: '12px', color: 'var(--dsw-alias-state-error-primary, #d84a3a)' }, children: persona.error }) : null,
-          jsx('h3', { style: { margin: '10px 0 0', fontSize: '14px' }, children: '朗读设置' }),
+          jsx('h3', { style: { margin: 0, paddingTop: '16px', borderTop: '1px solid var(--dsw-alias-border-l2, rgba(128,128,128,0.3))', fontSize: '14px' }, children: '朗读设置' }),
           jsx('div', { style: { fontSize: '12px', lineHeight: 1.7, opacity: 0.7 }, children: '选引擎、填地址、指定参考音频。改完点「保存设置」即时生效，不用重启。' }),
           /* [local patch 0.3.2] 两种引擎的优缺点对照，替代原来那句「当前用……」。
            * 原来那句只讲当前这个引擎，使用者没法判断"要不要换"；这里两个都摆出来，
@@ -8282,7 +8415,7 @@ html[data-dsh-fairy-visual][data-dsh-fairy-theme="light"] [data-dsh-fairy-mascot
            * 版式是竖着三行：标题 / 开关 / 灰字说明。开关用一个 flex 包住，
            * 否则在外层 flex-column 里会被拉满整行宽，很难看。
            * copyState 放在折叠之外，因为「复制安装说明」按钮在设置区，折叠时也要能看到复制回执。 */
-          jsx('h3', { style: { margin: '10px 0 0', fontSize: '14px' }, children: '朗读自检' }),
+          jsx('h3', { style: { margin: 0, paddingTop: '16px', borderTop: '1px solid var(--dsw-alias-border-l2, rgba(128,128,128,0.3))', fontSize: '14px' }, children: '朗读自检' }),
           jsx('div', { style: { display: 'flex', margin: '4px 0 0' }, children: jsx('button', {
             type: 'button',
             'data-dsh-fairy-selfcheck-toggle': 'true',
@@ -8324,7 +8457,7 @@ html[data-dsh-fairy-visual][data-dsh-fairy-theme="light"] [data-dsh-fairy-mascot
               children: '提示：自动朗读开关和每条回复下方的朗读按钮，只会在真正的会话页面里出现；首页和刚新建的空白会话页不会显示，这是 DSH 本身的设计，不是插件坏了。'
             })
           ] }) : null,
-          jsx('h3', { style: { margin: '6px 0 0', fontSize: '14px' }, children: '语音简报（可选）' }),
+          jsx('h3', { style: { margin: 0, paddingTop: '16px', borderTop: '1px solid var(--dsw-alias-border-l2, rgba(128,128,128,0.3))', fontSize: '14px' }, children: '语音简报（可选）' }),
           jsx('div', { style: rowStyle, children: brain.text }),
           jsx('input', {
             type: 'password', autoComplete: 'new-password', value: apiKey,
@@ -8336,21 +8469,16 @@ html[data-dsh-fairy-visual][data-dsh-fairy-theme="light"] [data-dsh-fairy-mascot
             brain.configured ? jsx('button', { type: 'button', disabled: busy, onClick: () => postConfig({ clear: true }), children: '移除密钥' }) : null
           ] }),
           // [local patch 0.3.1] 面板最底部：诊断信息（结构摘要只有字段名与类型，不含任何对话内容）
-          jsx('h3', { style: { margin: '6px 0 0', fontSize: '14px' }, children: '诊断信息（排查用）' }),
+          jsx('h3', { style: { margin: 0, paddingTop: '16px', borderTop: '1px solid var(--dsw-alias-border-l2, rgba(128,128,128,0.3))', fontSize: '14px' }, children: '诊断信息（排查用）' }),
           jsx('div', {
             style: { fontSize: '12px', lineHeight: 1.7, opacity: 0.7, maxWidth: '380px' },
-            children: '语音出问题时：点下面这个按钮复制诊断信息，再把下面框里的内容全选复制，两条一起发到群里（1124349108）。两个框里都没有聊天内容；诊断信息里带本机路径和自检结果，不想公开可以自行删掉。'
+            children: '语音出问题时：点下面这个按钮复制诊断信息 —— 结构摘要已经一起带上了，复制一次、粘一次就行（群号 1124349108）。里面没有聊天内容；诊断信息带本机路径和自检结果，不想公开可以自行删掉。'
           }),
           // [local patch 0.3.2] 自检明细折叠后，原来那个「复制诊断信息」按钮可能被藏起来，
           // 所以这里再放一个 —— 这一节的用途本来就是「把信息发出去」，按钮放这儿更顺手。
           jsx('button', { type: 'button', 'data-dsh-fairy-copy-diagnostics': 'true', onClick: copyDiagnostics, children: '复制诊断信息' }),
           copyState ? jsx('div', { style: { fontSize: '12px', opacity: 0.8 }, children: copyState }) : null,
-          jsx('div', { style: { fontSize: '11px', opacity: 0.6 }, children: '结构摘要（只有字段名与类型，不含任何取值）' }),
-          jsx('textarea', {
-            readOnly: true, value: shapeText, rows: 6,
-            'data-dsh-fairy-shape': 'true',
-            style: { ...inputStyle, width: '100%', maxWidth: '380px', height: 'auto', padding: '8px 10px', whiteSpace: 'pre', wordBreak: 'break-all', fontSize: '11px', opacity: 0.85 }
-          }),
+          // [local patch 0.3.5] 原来这里还有一个「结构摘要」只读文本框，已删除 —— 它的内容会跟着「复制诊断信息」一起走
           diagText ? jsx('div', { style: { fontSize: '11px', opacity: 0.6 }, children: '诊断信息（点了「复制诊断信息」后出现在这里）' }) : null,
           diagText ? jsx('textarea', {
             readOnly: true, value: diagText, rows: 6,
@@ -8469,7 +8597,7 @@ html[data-dsh-fairy-visual][data-dsh-fairy-theme="light"] [data-dsh-fairy-mascot
 					order: 45,
 					label: () => "Fairy"
 				}, () => jsxs('div', {
-					children: [jsx(FairyNotice, {}), jsx(Settings, {
+					children: [jsx(FairyUpdateNotice, {}), jsx(FairyNotice, {}), jsx('h3', { style: { margin: 0, paddingTop: '16px', borderTop: '1px solid var(--dsw-alias-border-l2, rgba(128,128,128,0.3))', fontSize: '14px' }, children: '通用' }), jsx(Settings, {
 						controller,
 						identitySettings
 					}), jsx(FairyVoicePanel, {})]

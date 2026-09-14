@@ -136,9 +136,10 @@ dsh plugin --profile web remove dsh-fairy-visual dsh-fairy-voice dsh-balance-met
 | 判别信号 | 判定 | 你该做什么 |
 | --- | --- | --- |
 | 朗读按钮**是灰的** | 本机没跑 GPT-SoVITS（`127.0.0.1:9880`）—— **这是上游设计，不是故障** | 让用户跑自检面板。**你无法**替他启动 TTS 服务，也无法替他生成参考音频 |
-| 自检**第 2 项**失败 | SoVITS 不可达 | 让用户起服务，或改地址 / 端口（设置里可改，**改完即时生效、不用重启**） |
+| 自检**第 2 项**失败 | SoVITS 不可达 | 让用户起服务，或改地址 / 端口（设置里可改，**改完即时生效、不用重启**）。⚠️ **若自检明说是「网页界面（WebUI）」** = 那个端口跑的是 Gradio（整合包的「一键启动」，常见 **9872**），**不是推理 API** → 让他另开窗口跑 `runtime\python.exe api_v2.py`（默认 **9880**），别去查"老版 api.py"（**0.3.5 起能识别**） |
 | 自检**第 3 项**失败；或日志有 `ENOENT … fairy_ref.wav` / `fairy_ref.txt` | 缺参考音频 | 提示放 **3–10 秒干净人声**到 `~/.dsh/fairy-voice/reference/`（该目录插件**启动时会自动建好**，里面附有 README.txt）。**`fairy_ref.txt` 缺失不影响出声** —— 宿主优雅回落到内置文案，不报错。历史位置 `runtime/reference/` 仍兼容 |
-| 自检**第 7 项「消息识别」** ❌；诊断里 `hasChat:false` / `chatKeys:[]` / `orderLength:-1`；**右下角出现红色提示框** | `chat` 被从 `useSession` 快照里拆走了（`0.1.2-rc.1` 那次改动，**0.3.1 已修**） | 若在 0.3.1 上**再次**出现 = DSH 又改了结构。看诊断里的 **`runningSource`**：长期是 `none` 说明兜底没命中，需要换数据源 |
+| 自检**第 7 项「消息识别」** ❌；诊断里 `hasChat:false` / `chatKeys:[]` / `orderLength:-1`；**右下角出现红色提示框** | `chat` 被从 `useSession` 快照里拆走了（`0.1.2-rc.1` 那次改动，**0.3.1 已修**） | 若在 0.3.1 上**再次**出现 = DSH 又改了结构。看诊断里的 **`runningSource`**：长期是 `none` 说明兜底没命中，需要换数据源。⚠️ **但先看有没有 `chatSource`** —— 见下一行，别急着怀疑 DSH |
+| 自检**第 7 项** ❌，且诊断里**缺 `chatSource` / `structure`** | 页面上的 **voice 客户端是 `0.3.1` 之前的旧包**（更新插件后，页面还在跑旧脚本）—— **与 DSH、与用户操作都无关** | 让用户**重启 DSH + Ctrl+F5**。⚠️ **设置页顶部那个「整理版」版本号来自 `fairy-visual`，代表不了 `dsh-fairy-voice`** —— 群友说"我装的是 0.3.4"**不能全信**，诊断里有没有 `chatSource` 才算数（**0.3.5 起自检会自己分辨并直接给出这个结论**） |
 | 朗读控件 `.dsh-fairy-voice-auto` 数不到 | **三重前置**：装了 `fairy-visual` + HDD 视觉模式已开 + **在真实会话页面** | 首页与刚建的空白会话**不显示**，这是 DSH 自身设计 |
 | 宿主 `/prepare` 连不上 9880 却仍成功 | **正常**：`/prepare` 只做本地切句，**只有 `/tts` 才需要** SoVITS | 不用管。这条也是"浏览器引擎可离线"的依据 |
 | 界面元素错乱 / 被别的插件挤掉 | 抢 DOM | 让用户先禁用其他改界面的插件：`beauticode` / `whale-widget` / `live2d-companion` / `liang-slider` / `ui-task-board` |

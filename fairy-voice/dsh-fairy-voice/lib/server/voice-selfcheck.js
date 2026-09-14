@@ -396,6 +396,25 @@ async function checkService(fetchImpl, config) {
       return { id: 'service', title, level: 'ok', detail, fix: '' };
     }
     if (response.status === 404 || response.status === 405) {
+      /* [local patch 0.3.5] 只凭 /docs 返回 404 会把「整合包跑的是 Gradio 网页界面」误报成
+       * 「老版 api.py」。GPT-SoVITS 的「一键启动」跑的是 inference_webui.py（Gradio，常见 9872），
+       * 它本来就没有 /docs。这里多戳一次根路径认一认，认出来就直说，
+       * 别让使用者往 DSH 或老版 api.py 上找（2026-09-14 群友实际踩的就是这条）。 */
+      if (!isMoss) {
+        try {
+          const rootResponse = await fetchWithTimeout(fetchImpl, `${config.base}/`, { method: 'GET' }, DOCS_TIMEOUT_MS);
+          const rootText = rootResponse.ok ? (await rootResponse.text()).slice(0, 20000) : '';
+          if (/gradio/i.test(rootText)) {
+            return {
+              id: 'service',
+              title,
+              level: 'fail',
+              detail: `${config.base} 上有东西在回应，但它不认 /docs —— 这个端口看着是 GPT-SoVITS 的【网页界面（WebUI）】，不是朗读要用的推理接口。`,
+              fix: '另开一个窗口，进到 GPT-SoVITS 目录后运行 runtime\\python.exe api_v2.py（默认监听 9880），再把上面的「SoVITS 地址」改成 http://127.0.0.1:9880 并点「保存设置」。注意：网页界面和推理接口别同时开着，显存小的机器会爆。',
+            };
+          }
+        } catch (error) { /* 认不出来就按原来的说法报，不影响其他检查 */ }
+      }
       return {
         id: 'service',
         title,
