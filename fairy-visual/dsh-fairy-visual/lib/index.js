@@ -1,6 +1,7 @@
 import { settingsNamespace } from '@deepseek-ai/dsh-settings';
 import z from '@deepseek-ai/schemastery';
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -49,6 +50,16 @@ const PRESET_ID = 'fairy';
 const PRESET_SOURCE = join(PLUGIN_ROOT, '.agent-presets', PRESET_ID);
 const DSH_HOME = String(process.env.DSH_HOME ?? '').trim() || join(homedir(), '.dsh');
 const PRESET_TARGET = join(DSH_HOME, '.agent-presets', PRESET_ID);
+// ---------------------------------------------------------------------------
+// [local patch 0.3.6] 启动时「仅同步一次」
+//
+// 预设装在 DSH 家目录里，只有用户去点开关时才刷新，于是包里的预设更新了、
+// 家目录里那份却一直是旧的（上游 persona 从 text 改叫 prefix 那次就翻车了）。
+// 这里记一份"上次同步时的源指纹"，启动时比一次：
+//   源没变 → 一个字都不动（保护用户自己改过的预设）
+//   源变了 → 整份重灌一次，并写回新指纹
+// ⚠️ 目标目录不存在时【不】擅自安装 —— 否则用户关掉开关，重启后它自己又回来了。
+const PRESET_SYNC_STAMP_PATH = join(DSH_HOME, '.fairy-persona', 'preset-sync.json');
 // ---------------------------------------------------------------------------
 // [local patch 0.2.3] 「一键设为默认预设」
 //
@@ -127,14 +138,68 @@ function presetStatus() {
   };
 }
 
+/** 算源目录的内容指纹（相对路径 + 文件内容）。链接 / junction 一律跳过。 */
+function fingerprintPresetSource() {
+  if (!existsSync(join(PRESET_SOURCE, 'agent.cordis.yml'))) return null;
+  const hash = createHash('sha256');
+  const walk = (dir, prefix) => {
+    const entries = readdirSync(dir, { withFileTypes: true })
+      .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    for (const entry of entries) {
+      const relative = `${prefix}${entry.name}`;
+      if (entry.isDirectory()) { walk(join(dir, entry.name), `${relative}/`); continue; }
+      if (!entry.isFile()) continue;
+      hash.update(relative);
+      hash.update(readFileSync(join(dir, entry.name)));
+    }
+  };
+  walk(PRESET_SOURCE, '');
+  return hash.digest('hex');
+}
+
+function readSyncStamp() {
+  try {
+    const value = JSON.parse(readFileSync(PRESET_SYNC_STAMP_PATH, 'utf8'));
+    return typeof value?.fingerprint === 'string' ? value.fingerprint : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeSyncStamp(fingerprint) {
+  if (typeof fingerprint !== 'string') return;
+  try {
+    mkdirSync(dirname(PRESET_SYNC_STAMP_PATH), { recursive: true });
+    writeFileSync(PRESET_SYNC_STAMP_PATH, `${JSON.stringify({ version: 1, fingerprint }, null, 2)}\n`, 'utf8');
+  } catch {
+    // 记不住就记不住：最多下次启动再同步一次，不影响正确性
+  }
+}
+
+/** 把包内预设整份重灌到家目录，并记下这一版的指纹。 */
+function installPreset(fingerprint) {
+  mkdirSync(dirname(PRESET_TARGET), { recursive: true });
+  rmSync(PRESET_TARGET, { recursive: true, force: true });
+  cpSync(PRESET_SOURCE, PRESET_TARGET, { recursive: true, force: true });
+  writeSyncStamp(typeof fingerprint === 'string' ? fingerprint : fingerprintPresetSource());
+}
+
+/** 启动时检查一次：只在"已经装过 + 包里的预设变了"时重灌。 */
+function syncPresetOnce() {
+  if (!existsSync(join(PRESET_TARGET, 'agent.cordis.yml'))) return 'not-installed';
+  const fingerprint = fingerprintPresetSource();
+  if (fingerprint === null) return 'source-missing';
+  if (readSyncStamp() === fingerprint) return 'unchanged';
+  installPreset(fingerprint);
+  return 'updated';
+}
+
 function setPresetEnabled(enabled) {
   if (enabled === true) {
     if (!existsSync(join(PRESET_SOURCE, 'agent.cordis.yml'))) {
       throw Object.assign(new Error('package preset missing'), { code: 'preset-source-missing' });
     }
-    mkdirSync(dirname(PRESET_TARGET), { recursive: true });
-    rmSync(PRESET_TARGET, { recursive: true, force: true });
-    cpSync(PRESET_SOURCE, PRESET_TARGET, { recursive: true, force: true });
+    installPreset();
   } else {
     rmSync(PRESET_TARGET, { recursive: true, force: true });
   }
@@ -250,6 +315,12 @@ fetch('/fairy-persona/status',{cache:'no-store'}).then(function(r){return r.ok?r
 
 export function apply(ctx) {
   return diagnostics.guard('apply', () => {
+    // [local patch 0.3.6] 启动同步一次预设（源没变就什么都不做；失败也绝不影响启动）
+    try {
+      diagnostics.info('persona.presetSync', { result: syncPresetOnce(), target: PRESET_TARGET });
+    } catch (error) {
+      diagnostics.warn('persona.presetSync', {}, error);
+    }
     ctx.inject(['settings'], (settingsCtx) => {
       settingsService = settingsCtx.settings;
       settingsCtx.settings.register(FAIRY_VISUAL_SETTINGS, FairyVisualSettings);

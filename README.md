@@ -9,7 +9,7 @@
 > **有问题请提到[本仓库 Issues](https://github.com/Guzhou2002/Fairy-DSH-Optimized/issues)
 > 或交流群 `1124349108`，请不要打扰上游作者。**
 
-> 📌 **当前版本 v0.3.4** —— 版本号见仓库根 [`VERSION`](VERSION)；
+> 📌 **当前版本 v0.3.6** —— 版本号见仓库根 [`VERSION`](VERSION)；
 > [发布页](https://github.com/Guzhou2002/Fairy-DSH-Optimized/releases/latest) ·
 > 本版修了什么见 [`RELEASE-NOTES.md`](RELEASE-NOTES.md)
 
