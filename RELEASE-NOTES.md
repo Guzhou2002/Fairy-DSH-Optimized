@@ -6,6 +6,53 @@
 
 ---
 
+## v0.3.8 变更
+
+> **加了个正经的卸载程序** —— 群友反馈"不会卸"，以前只能自己敲命令。
+
+### 🧹 新增 `uninstall.cmd`：双击就能卸
+
+| 它会做什么 | 说明 |
+| --- | --- |
+| **备份** | 把 profile 的 `package.json` / `cordis.patch.yml` / `settings.yaml` 备份到 `fairy-backup-<时间戳>\` |
+| **卸插件** | 只卸**真正装过的**（`dsh-fairy-*` 开头的，加 `dsh-balance-meter` / `dsh-browser-dock`） |
+| 🔴 **还原「新会话默认预设」** | 优先用我们自己的备份 `.fairy-persona\default-preset-backup.json`；没有就回落内置的 `standard` |
+| **删预设目录** | `~/.dsh/.agent-presets/fairy` 与同步指纹 |
+| **扫历史残留** | 老版 0.2.x 的 `Fairy-DSH managed block`、`package.json` 残留行、`node_modules` 残渣 |
+| **校验** | 跑一次 `dsh --profile web --dump-config` |
+| **提示** | 把**没有删掉**的用户数据路径打出来 |
+
+### 🔴 「必须还原默认预设」—— 这才是这一版的重点
+
+卸载最怕的不是删不干净，是**卸完反而更坏**：
+`settings.yaml` 里还写着 `agent-presets.default: fairy`，而预设已经被删掉 ——
+新会话挂载失败 → **「点新建会话没反应」**。
+所以脚本**一定**要把这一项还原（没备份就回落 `standard`，**绝不写空串**）。
+这一条也写进了 `AGENTS.md` §3，免得以后有人把卸载逻辑改回去。
+
+### 🔒 卸载不删你的数据
+
+`~/.dsh/fairy-voice/`（参考音频 / 朗读设置 / 语音简报 API Key）**一个字节都不动**，
+脚本只在最后把路径打给你 —— **要彻底清干净就自己删那个目录**（删了就找不回来）。
+卸载时也**不会**多问一句"要不要连数据一起删"：少一个交互，就少一次误删。
+
+### 🧰 顺手定了个"以后不再踩"的规矩
+
+`uninstall.cmd` 是**纯 ASCII 启动器**（一个中文字都没有），中文全放在 `uninstall.ps1`（UTF-8 带 BOM）里。
+好处：**根本不用碰 GBK**，在 936 代码页的机器上也绝不会乱码。
+代价是**两个文件必须一起下载、放同一个文件夹**（`.cmd` 只是启动器，逻辑在 `.ps1` 里）。
+**以后新写的脚本一律照这个来**，别再往 `.cmd` 里塞中文。
+
+### 🧩 老版本也能卸
+
+脚本带兼容层：认得出 0.2.x 在 `cordis.patch.yml` 里留下的 `Fairy-DSH managed block`、
+以及 `package.json` 里的残留行 —— 这些**默认只报告不动手**，加 `-CleanBundle` 才会清（清之前先备份）。
+
+> 相对 v0.3.7：**5 个 `.tgz` 逐字节未变**（这次没碰任何插件包），
+> 附件从 7 个变成 **9 个**（多了 `uninstall.cmd` 与 `uninstall.ps1`）。仓库根 `VERSION` = **0.3.8**。
+
+---
+
 ## v0.3.7 变更
 
 > **v0.3.6 只修好了一半。** 这一版才真正对所有 DSH 版本成立。
